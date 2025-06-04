@@ -1,0 +1,16 @@
+Chili__healthy
+Chili__leaf curl
+Chili__leaf spot
+Chili__whitefly
+Corn__common_rust
+Corn__gray_leaf_spot
+Corn__healthy
+Corn__northern_leaf_blight
+Rice__brown_spot
+Rice__healthy
+Rice__leaf_blast
+Rice__neck_blast
+Tomato__early_blight
+Tomato__healthy
+Tomato__late_blight
+Tomato__yellow_leaf_curl_virus
