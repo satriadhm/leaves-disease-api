@@ -8,7 +8,7 @@ const mongoose = require("mongoose");
 const path = require("path");
 const { limiter } = require("./app/utils/rateLimiter");
 const swaggerUi = require("swagger-ui-express");
-const swaggerConfig = require("./app/config/swagger.config");
+const baseSwaggerConfig = require("./app/config/swagger.config"); // Changed from 'swaggerConfig' to 'baseSwaggerConfig'
 
 const app = express();
 
@@ -52,7 +52,7 @@ const autoSeedDatabase = async () => {
     // Seed roles
     const roles = ["user", "admin", "moderator"];
     const createdRoles = {};
-    
+
     for (let roleName of roles) {
       const role = await new Role({ name: roleName }).save();
       createdRoles[roleName] = role;
@@ -84,33 +84,33 @@ const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
+
     // Development: Allow localhost dengan berbagai port
     const localhostRegex = /^http:\/\/localhost:\d+$/;
     const localhostIPRegex = /^http:\/\/127\.0\.0\.1:\d+$/;
     const localhostIPv4Regex = /^http:\/\/192\.168\.\d+\.\d+:\d+$/;
-    
+
     if (localhostRegex.test(origin) || localhostIPRegex.test(origin) || localhostIPv4Regex.test(origin)) {
       return callback(null, true);
     }
 
     // Allow ngrok domains
-    if (origin.includes('ngrok.io') || 
-        origin.includes('ngrok-free.app') || 
+    if (origin.includes('ngrok.io') ||
+        origin.includes('ngrok-free.app') ||
         origin.includes('ngrok.app') ||
         origin.includes('ngrok.dev')) {
       return callback(null, true);
     }
 
     // Allow Vercel deployments
-    if (origin.includes('vercel.app') || 
+    if (origin.includes('vercel.app') ||
         origin.includes('vercel.sh') ||
         origin.includes('now.sh')) {
       return callback(null, true);
     }
 
     // Allow Netlify deployments
-    if (origin.includes('netlify.app') || 
+    if (origin.includes('netlify.app') ||
         origin.includes('netlify.com')) {
       return callback(null, true);
     }
@@ -141,8 +141,8 @@ const corsOptions = {
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD', 'PATCH'],
   allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
+    'Content-Type',
+    'Authorization',
     'x-access-token',
     'Origin',
     'X-Requested-With',
@@ -180,11 +180,23 @@ app.use(limiter);
 require("./app/routes/auth.routes")(app);
 require("./app/routes/user.routes")(app);
 require("./app/routes/prediction.routes")(app);
-app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerConfig));
+
+// --- Dynamically set Swagger host before setting up Swagger UI ---
+// This middleware will intercept requests to /api/docs and configure Swagger UI dynamically
+app.use("/api/docs", (req, res, next) => {
+  const dynamicSwaggerConfig = { ...baseSwaggerConfig }; // Create a copy of the base config
+  dynamicSwaggerConfig.host = req.headers.host; // Use the Host header from the request
+  // Determine scheme based on request protocol
+  // req.protocol will be 'http' or 'https' depending on the connection
+  dynamicSwaggerConfig.schemes = [req.protocol];
+
+  // Pass the dynamically configured Swagger object to swaggerUi.setup
+  swaggerUi.setup(dynamicSwaggerConfig)(req, res, next);
+}, swaggerUi.serve); // Ensure swaggerUi.serve is passed as the second middleware
 
 // Health check endpoint
 app.get("/health", (req, res) => {
-  res.json({ 
+  res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
@@ -194,7 +206,7 @@ app.get("/health", (req, res) => {
 
 // Default route
 app.get("/", (req, res) => {
-  res.json({ 
+  res.json({
     message: "Plant Disease Prediction API is running!",
     version: "2.0.0",
     endpoints: {
