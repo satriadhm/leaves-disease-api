@@ -17,7 +17,7 @@ app.set('trust proxy', 1);
 // Database connection dengan auto-seed
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.DB_URI || "mongodb://127.0.0.1:27017/auth_service", {
+    await mongoose.connect(process.env.DB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
