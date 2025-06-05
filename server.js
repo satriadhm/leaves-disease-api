@@ -1,4 +1,4 @@
-// server.js
+// server.js - Fixed Swagger Configuration
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -8,7 +8,7 @@ const mongoose = require("mongoose");
 const path = require("path");
 const { limiter } = require("./app/utils/rateLimiter");
 const swaggerUi = require("swagger-ui-express");
-const baseSwaggerConfig = require("./app/config/swagger.config"); // Changed from 'swaggerConfig' to 'baseSwaggerConfig'
+const baseSwaggerConfig = require("./app/config/swagger.config");
 
 const app = express();
 
@@ -176,23 +176,40 @@ if (process.env.NODE_ENV !== 'production') {
 
 app.use(limiter);
 
+// FIXED: Swagger UI Configuration
+// Create dynamic swagger config function
+const createSwaggerConfig = (req) => {
+  const dynamicConfig = { ...baseSwaggerConfig };
+  
+  // Set host based on request
+  dynamicConfig.host = req.get('host');
+  
+  // Set scheme based on request
+  const scheme = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+  dynamicConfig.schemes = [scheme];
+  
+  return dynamicConfig;
+};
+
+// Swagger UI routes - FIXED order and configuration
+app.use('/api/docs', swaggerUi.serve);
+app.get('/api/docs', (req, res, next) => {
+  const swaggerConfig = createSwaggerConfig(req);
+  const swaggerUiHandler = swaggerUi.setup(swaggerConfig, {
+    explorer: true,
+    swaggerOptions: {
+      docExpansion: 'none',
+      filter: true,
+      showRequestHeaders: true,
+    }
+  });
+  swaggerUiHandler(req, res, next);
+});
+
 // Routes
 require("./app/routes/auth.routes")(app);
 require("./app/routes/user.routes")(app);
 require("./app/routes/prediction.routes")(app);
-
-// --- Dynamically set Swagger host before setting up Swagger UI ---
-// This middleware will intercept requests to /api/docs and configure Swagger UI dynamically
-app.use("/api/docs", (req, res, next) => {
-  const dynamicSwaggerConfig = { ...baseSwaggerConfig }; // Create a copy of the base config
-  dynamicSwaggerConfig.host = req.headers.host; // Use the Host header from the request
-  // Determine scheme based on request protocol
-  // req.protocol will be 'http' or 'https' depending on the connection
-  dynamicSwaggerConfig.schemes = [req.protocol];
-
-  // Pass the dynamically configured Swagger object to swaggerUi.setup
-  swaggerUi.setup(dynamicSwaggerConfig)(req, res, next);
-}, swaggerUi.serve); // Ensure swaggerUi.serve is passed as the second middleware
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -200,7 +217,8 @@ app.get("/health", (req, res) => {
     status: "OK",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
-    cors: "Universal CORS enabled"
+    cors: "Universal CORS enabled",
+    swagger: "Available at /api/docs"
   });
 });
 

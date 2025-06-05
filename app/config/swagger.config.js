@@ -1,88 +1,170 @@
-// app/config/swagger.config.js - Fixed version without update prediction endpoint
+// app/config/swagger.config.js - Fixed version with better configuration
 module.exports = {
   swagger: "2.0",
   info: {
     version: "2.0.0",
-    title: "Plant Disease Prediction API - Complete Edition",
-    description: "Comprehensive Authentication & Plant Disease Prediction API with CRUD operations (Create, Read, Delete - No Update)",
+    title: "Plant Disease Prediction API",
+    description: "Comprehensive Authentication & Plant Disease Prediction API with CRUD operations",
     contact: {
       name: "API Support",
       email: "glorioussatria@gmail.com"
+    },
+    license: {
+      name: "ISC"
     }
   },
-   host: process.env.NODE_ENV === 'production' 
-    ? "leaves-disease-api.vercel.app" 
-    : "localhost:8000",
-  schemes: process.env.NODE_ENV === 'production' 
-    ? ["https"] 
-    : ["http", "https"],
+  // Default values - will be overridden dynamically
+  host: "localhost:8000",
+  schemes: ["http"],
   basePath: "/",
-  consumes: ["application/json"],
+  consumes: ["application/json", "multipart/form-data"],
   produces: ["application/json"],
+  
   securityDefinitions: {
     Bearer: {
       type: "apiKey",
       name: "x-access-token",
       in: "header",
-      description: "JWT token for authentication"
+      description: "JWT token for authentication. Format: 'your-jwt-token'"
     }
   },
+  
   tags: [
+    { name: "Health", description: "Health check endpoints" },
     { name: "Auth", description: "Authentication and authorization endpoints" },
     { name: "User", description: "User profile and management endpoints" },
     { name: "Prediction", description: "Plant disease prediction endpoints" },
-    { name: "Admin", description: "Admin-only endpoints" },
-    { name: "Moderator", description: "Moderator endpoints" }
+    { name: "Admin", description: "Admin-only endpoints" }
   ],
+  
   paths: {
+    // Health endpoint
+    "/health": {
+      get: {
+        tags: ["Health"],
+        summary: "Health check",
+        description: "Check if the API is running",
+        responses: {
+          200: { 
+            description: "API is healthy",
+            schema: {
+              type: "object",
+              properties: {
+                status: { type: "string", example: "OK" },
+                timestamp: { type: "string", format: "date-time" },
+                environment: { type: "string", example: "development" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    // Model health endpoint
+    "/api/model/health": {
+      get: {
+        tags: ["Prediction"],
+        summary: "Check ML model health",
+        description: "Get information about the ML model status and capabilities",
+        responses: {
+          200: { 
+            description: "Model health information",
+            schema: {
+              type: "object",
+              properties: {
+                success: { type: "boolean" },
+                data: {
+                  type: "object",
+                  properties: {
+                    modelLoaded: { type: "boolean" },
+                    modelType: { type: "string" },
+                    totalClasses: { type: "integer" },
+                    inputShape: { type: "array" },
+                    outputShape: { type: "array" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
     // Authentication endpoints
     "/api/auth/signup": {
       post: {
         tags: ["Auth"],
-        summary: "Register a new user account",
-        description: "Create a new user account with username, email, and password",
+        summary: "Register a new user",
+        description: "Create a new user account",
         parameters: [{
           in: "body",
           name: "body",
           required: true,
           schema: {
             type: "object",
+            required: ["username", "email", "password"],
             properties: {
-              username: { type: "string", minLength: 3, maxLength: 30 },
-              email: { type: "string", format: "email" },
-              password: { type: "string", minLength: 6 },
-              firstName: { type: "string", maxLength: 50 },
-              lastName: { type: "string", maxLength: 50 },
-              phone: { type: "string", maxLength: 20 },
-              address: { type: "string", maxLength: 200 },
-              roles: { type: "array", items: { type: "string" } }
-            },
-            required: ["username", "email", "password"]
+              username: { 
+                type: "string", 
+                minLength: 3, 
+                maxLength: 30,
+                example: "john_doe"
+              },
+              email: { 
+                type: "string", 
+                format: "email",
+                example: "john@example.com"
+              },
+              password: { 
+                type: "string", 
+                minLength: 6,
+                example: "password123"
+              },
+              firstName: { type: "string", example: "John" },
+              lastName: { type: "string", example: "Doe" }
+            }
           }
         }],
         responses: {
-          200: { description: "User registered successfully" },
-          400: { description: "Invalid input or user already exists" },
-          500: { description: "Internal server error" }
+          200: { 
+            description: "User registered successfully",
+            schema: {
+              type: "object",
+              properties: {
+                message: { type: "string", example: "User was registered successfully!" },
+                userId: { type: "string" }
+              }
+            }
+          },
+          400: { 
+            description: "Bad request",
+            schema: {
+              type: "object",
+              properties: {
+                message: { type: "string", example: "Username already exists!" }
+              }
+            }
+          }
         }
       }
     },
+
     "/api/auth/signin": {
       post: {
         tags: ["Auth"],
-        summary: "Sign in to get access token",
-        description: "Authenticate user and receive JWT access token",
+        summary: "Sign in",
+        description: "Authenticate user and get access token",
         parameters: [{
           in: "body",
           name: "body",
           required: true,
           schema: {
             type: "object",
+            required: ["username", "password"],
             properties: {
-              username: { type: "string" },
-              password: { type: "string" }
-            },
-            required: ["username", "password"]
+              username: { type: "string", example: "john_doe" },
+              password: { type: "string", example: "password123" }
+            }
           }
         }],
         responses: {
@@ -95,178 +177,35 @@ module.exports = {
                 username: { type: "string" },
                 email: { type: "string" },
                 roles: { type: "array", items: { type: "string" } },
-                accessToken: { type: "string" },
-                lastLogin: { type: "string", format: "date-time" }
+                accessToken: { type: "string" }
               }
             }
           },
           401: { description: "Invalid credentials" },
-          403: { description: "Account deactivated" },
           404: { description: "User not found" }
         }
       }
     },
+
     "/api/auth/logout": {
       post: {
         tags: ["Auth"],
-        summary: "Logout and invalidate token",
-        description: "Logout current user and blacklist the token",
+        summary: "Logout",
+        description: "Logout current user and invalidate token",
         security: [{ "Bearer": [] }],
         responses: {
           200: { description: "Logged out successfully" },
-          400: { description: "No token provided" },
           401: { description: "Invalid token" }
         }
       }
     },
-    "/api/auth/forgot-password": {
-      post: {
-        tags: ["Auth"],
-        summary: "Request password reset",
-        description: "Send password reset token to user's email",
-        parameters: [{
-          in: "body",
-          name: "body",
-          required: true,
-          schema: {
-            type: "object",
-            properties: {
-              email: { type: "string", format: "email" }
-            },
-            required: ["email"]
-          }
-        }],
-        responses: {
-          200: { description: "Reset token generated successfully" },
-          404: { description: "User not found" }
-        }
-      }
-    },
-    "/api/auth/reset-password": {
-      post: {
-        tags: ["Auth"],
-        summary: "Reset password with token",
-        description: "Reset user password using reset token",
-        parameters: [{
-          in: "body",
-          name: "body",
-          required: true,
-          schema: {
-            type: "object",
-            properties: {
-              resetToken: { type: "string" },
-              newPassword: { type: "string", minLength: 6 }
-            },
-            required: ["resetToken", "newPassword"]
-          }
-        }],
-        responses: {
-          200: { description: "Password reset successfully" },
-          401: { description: "Invalid or expired token" }
-        }
-      }
-    },
-    "/api/auth/change-password": {
-      post: {
-        tags: ["Auth"],
-        summary: "Change current password",
-        description: "Change password for authenticated user",
-        security: [{ "Bearer": [] }],
-        parameters: [{
-          in: "body",
-          name: "body",
-          required: true,
-          schema: {
-            type: "object",
-            properties: {
-              currentPassword: { type: "string" },
-              newPassword: { type: "string", minLength: 6 }
-            },
-            required: ["currentPassword", "newPassword"]
-          }
-        }],
-        responses: {
-          200: { description: "Password changed successfully" },
-          401: { description: "Current password is incorrect" }
-        }
-      }
-    },
 
-    // User endpoints
-    "/api/user/profile": {
-      get: {
-        tags: ["User"],
-        summary: "Get current user profile",
-        description: "Retrieve authenticated user's profile information",
-        security: [{ "Bearer": [] }],
-        responses: {
-          200: { description: "Profile retrieved successfully" },
-          401: { description: "Authentication required" },
-          404: { description: "User not found" }
-        }
-      },
-      put: {
-        tags: ["User"],
-        summary: "Update user profile",
-        description: "Update authenticated user's profile information",
-        security: [{ "Bearer": [] }],
-        parameters: [{
-          in: "body",
-          name: "body",
-          schema: {
-            type: "object",
-            properties: {
-              username: { type: "string" },
-              email: { type: "string", format: "email" },
-              profile: {
-                type: "object",
-                properties: {
-                  firstName: { type: "string" },
-                  lastName: { type: "string" },
-                  phone: { type: "string" },
-                  address: { type: "string" }
-                }
-              }
-            }
-          }
-        }],
-        responses: {
-          200: { description: "Profile updated successfully" },
-          400: { description: "Invalid input or username/email already exists" }
-        }
-      }
-    },
-    "/api/user/account": {
-      delete: {
-        tags: ["User"],
-        summary: "Delete user account",
-        description: "Permanently delete current user account",
-        security: [{ "Bearer": [] }],
-        parameters: [{
-          in: "body",
-          name: "body",
-          required: true,
-          schema: {
-            type: "object",
-            properties: {
-              password: { type: "string" }
-            },
-            required: ["password"]
-          }
-        }],
-        responses: {
-          200: { description: "Account deleted successfully" },
-          401: { description: "Invalid password" }
-        }
-      }
-    },
-
-    // Prediction endpoints (No UPDATE operation)
+    // Prediction endpoints
     "/api/predict": {
       post: {
         tags: ["Prediction"],
-        summary: "Predict plant disease from image",
-        description: "Upload image and get plant disease prediction",
+        summary: "Predict plant disease",
+        description: "Upload an image and get plant disease prediction",
         consumes: ["multipart/form-data"],
         parameters: [
           {
@@ -296,18 +235,26 @@ module.exports = {
             schema: {
               type: "object",
               properties: {
-                success: { type: "boolean" },
+                success: { type: "boolean", example: true },
                 message: { type: "string" },
                 data: {
                   type: "object",
                   properties: {
                     id: { type: "string" },
-                    predictedClass: { type: "string" },
-                    confidence: { type: "number" },
-                    allPredictions: { type: "array" },
+                    predictedClass: { type: "string", example: "Tomato__healthy" },
+                    confidence: { type: "number", example: 95.5 },
+                    allPredictions: { 
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          class: { type: "string" },
+                          confidence: { type: "number" }
+                        }
+                      }
+                    },
                     imageName: { type: "string" },
-                    imageUrl: { type: "string" },
-                    processingTime: { type: "string" }
+                    processingTime: { type: "string", example: "1500ms" }
                   }
                 }
               }
@@ -318,11 +265,12 @@ module.exports = {
         }
       }
     },
+
     "/api/predictions/history": {
       get: {
         tags: ["Prediction"],
         summary: "Get prediction history",
-        description: "Retrieve authenticated user's prediction history",
+        description: "Get authenticated user's prediction history",
         security: [{ "Bearer": [] }],
         parameters: [
           {
@@ -336,26 +284,6 @@ module.exports = {
             name: "limit",
             type: "integer",
             description: "Items per page (default: 10, max: 50)"
-          },
-          {
-            in: "query",
-            name: "predictedClass",
-            type: "string",
-            description: "Filter by disease class"
-          },
-          {
-            in: "query",
-            name: "startDate",
-            type: "string",
-            format: "date",
-            description: "Filter from date (YYYY-MM-DD)"
-          },
-          {
-            in: "query",
-            name: "endDate",
-            type: "string",
-            format: "date",
-            description: "Filter to date (YYYY-MM-DD)"
           }
         ],
         responses: {
@@ -364,11 +292,11 @@ module.exports = {
         }
       }
     },
+
     "/api/predictions/{id}": {
       get: {
         tags: ["Prediction"],
         summary: "Get prediction details",
-        description: "Get detailed information about a specific prediction",
         security: [{ "Bearer": [] }],
         parameters: [{
           in: "path",
@@ -385,7 +313,6 @@ module.exports = {
       delete: {
         tags: ["Prediction"],
         summary: "Delete prediction",
-        description: "Delete a prediction and its associated image",
         security: [{ "Bearer": [] }],
         parameters: [{
           in: "path",
@@ -400,12 +327,52 @@ module.exports = {
       }
     },
 
+    // User endpoints
+    "/api/user/profile": {
+      get: {
+        tags: ["User"],
+        summary: "Get user profile",
+        security: [{ "Bearer": [] }],
+        responses: {
+          200: { description: "Profile retrieved successfully" },
+          401: { description: "Authentication required" }
+        }
+      },
+      put: {
+        tags: ["User"],
+        summary: "Update user profile",
+        security: [{ "Bearer": [] }],
+        parameters: [{
+          in: "body",
+          name: "body",
+          schema: {
+            type: "object",
+            properties: {
+              username: { type: "string" },
+              email: { type: "string" },
+              profile: {
+                type: "object",
+                properties: {
+                  firstName: { type: "string" },
+                  lastName: { type: "string" },
+                  phone: { type: "string" }
+                }
+              }
+            }
+          }
+        }],
+        responses: {
+          200: { description: "Profile updated successfully" },
+          400: { description: "Invalid input" }
+        }
+      }
+    },
+
     // Admin endpoints
     "/api/admin/users": {
       get: {
         tags: ["Admin"],
         summary: "Get all users (Admin only)",
-        description: "Retrieve paginated list of all users",
         security: [{ "Bearer": [] }],
         parameters: [
           {
@@ -417,24 +384,6 @@ module.exports = {
             in: "query",
             name: "limit",
             type: "integer"
-          },
-          {
-            in: "query",
-            name: "search",
-            type: "string",
-            description: "Search by username, email, or name"
-          },
-          {
-            in: "query",
-            name: "status",
-            type: "string",
-            enum: ["active", "inactive", "suspended"]
-          },
-          {
-            in: "query",
-            name: "role",
-            type: "string",
-            enum: ["user", "admin", "moderator"]
           }
         ],
         responses: {
@@ -443,176 +392,20 @@ module.exports = {
         }
       }
     },
-    "/api/admin/users/{id}": {
-      get: {
-        tags: ["Admin"],
-        summary: "Get user by ID (Admin only)",
-        security: [{ "Bearer": [] }],
-        parameters: [{
-          in: "path",
-          name: "id",
-          type: "string",
-          required: true
-        }],
-        responses: {
-          200: { description: "User retrieved successfully" },
-          404: { description: "User not found" }
-        }
-      },
-      put: {
-        tags: ["Admin"],
-        summary: "Update user (Admin only)",
-        security: [{ "Bearer": [] }],
-        parameters: [
-          {
-            in: "path",
-            name: "id",
-            type: "string",
-            required: true
-          },
-          {
-            in: "body",
-            name: "body",
-            schema: {
-              type: "object",
-              properties: {
-                username: { type: "string" },
-                email: { type: "string" },
-                roles: { type: "array", items: { type: "string" } },
-                status: { type: "string", enum: ["active", "inactive", "suspended"] },
-                profile: { type: "object" }
-              }
-            }
-          }
-        ],
-        responses: {
-          200: { description: "User updated successfully" },
-          404: { description: "User not found" }
-        }
-      },
-      delete: {
-        tags: ["Admin"],
-        summary: "Delete user (Admin only)",
-        security: [{ "Bearer": [] }],
-        parameters: [{
-          in: "path",
-          name: "id",
-          type: "string",
-          required: true
-        }],
-        responses: {
-          200: { description: "User deleted successfully" },
-          400: { description: "Cannot delete own account" },
-          404: { description: "User not found" }
-        }
-      }
-    },
+
     "/api/admin/predictions": {
       get: {
         tags: ["Admin"],
         summary: "Get all predictions (Admin only)",
         security: [{ "Bearer": [] }],
-        parameters: [
-          {
-            in: "query",
-            name: "page",
-            type: "integer"
-          },
-          {
-            in: "query",
-            name: "limit",
-            type: "integer"
-          },
-          {
-            in: "query",
-            name: "predictedClass",
-            type: "string"
-          },
-          {
-            in: "query",
-            name: "predictionType",
-            type: "string",
-            enum: ["authenticated", "anonymous"]
-          },
-          {
-            in: "query",
-            name: "userId",
-            type: "string"
-          }
-        ],
         responses: {
-          200: { description: "All predictions retrieved successfully" }
-        }
-      }
-    },
-    "/api/admin/predictions/{id}": {
-      delete: {
-        tags: ["Admin"],
-        summary: "Delete any prediction (Admin only)",
-        security: [{ "Bearer": [] }],
-        parameters: [{
-          in: "path",
-          name: "id",
-          type: "string",
-          required: true
-        }],
-        responses: {
-          200: { description: "Prediction deleted successfully" },
-          404: { description: "Prediction not found" }
-        }
-      }
-    },
-    "/api/predictions/stats": {
-      get: {
-        tags: ["Admin"],
-        summary: "Get prediction statistics (Admin only)",
-        security: [{ "Bearer": [] }],
-        responses: {
-          200: { 
-            description: "Statistics retrieved successfully",
-            schema: {
-              type: "object",
-              properties: {
-                overview: { type: "object" },
-                predictionsByClass: { type: "array" },
-                predictionsByDate: { type: "array" },
-                systemInfo: { type: "object" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/model/health": {
-      get: {
-        tags: ["Prediction"],
-        summary: "Check model health status",
-        description: "Get information about the ML model status and capabilities",
-        responses: {
-          200: { 
-            description: "Model health information",
-            schema: {
-              type: "object",
-              properties: {
-                success: { type: "boolean" },
-                data: {
-                  type: "object",
-                  properties: {
-                    modelLoaded: { type: "boolean" },
-                    modelType: { type: "string" },
-                    totalClasses: { type: "integer" },
-                    inputShape: { type: "array" },
-                    outputShape: { type: "array" },
-                    memoryInfo: { type: "object" }
-                  }
-                }
-              }
-            }
-          }
+          200: { description: "All predictions retrieved successfully" },
+          403: { description: "Admin access required" }
         }
       }
     }
   },
+
   definitions: {
     User: {
       type: "object",
@@ -625,13 +418,10 @@ module.exports = {
           properties: {
             firstName: { type: "string" },
             lastName: { type: "string" },
-            phone: { type: "string" },
-            address: { type: "string" }
+            phone: { type: "string" }
           }
         },
         roles: { type: "array", items: { type: "string" } },
-        status: { type: "string" },
-        lastLogin: { type: "string", format: "date-time" },
         createdAt: { type: "string", format: "date-time" }
       }
     },
@@ -642,8 +432,6 @@ module.exports = {
         predictedClass: { type: "string" },
         confidence: { type: "number" },
         imageName: { type: "string" },
-        imageUrl: { type: "string" },
-        notes: { type: "string" },
         processingTime: { type: "number" },
         createdAt: { type: "string", format: "date-time" }
       }
@@ -651,7 +439,7 @@ module.exports = {
     Error: {
       type: "object",
       properties: {
-        success: { type: "boolean" },
+        success: { type: "boolean", example: false },
         message: { type: "string" },
         error: { type: "string" }
       }
