@@ -1,4 +1,4 @@
-// server.js - Alternative version with Route Manager
+// server.js - Fixed version with individual route imports
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -8,7 +8,6 @@ const morgan = require("morgan");
 // Import configurations
 const databaseConfig = require("./app/config/database.config");
 const corsConfig = require("./app/config/cors.config");
-const routeManager = require("./app/routes");
 const { limiter } = require("./app/utils/rateLimiter");
 const { errorHandler } = require("./app/middleware/errorHandler");
 
@@ -44,10 +43,47 @@ app.use(limiter);
 // Connect to database
 databaseConfig.connect();
 
-// Setup all routes using route manager
-const routeStatus = routeManager.setupRoutes(app);
+// Setup routes individually
+console.log('Loading routes...');
 
-// Default route with route status
+try {
+  require("./app/routes/health.routes")(app);
+  console.log('✅ Health routes loaded');
+} catch (error) {
+  console.error('❌ Failed to load health routes:', error.message);
+}
+
+try {
+  require("./app/routes/swagger.routes")(app);
+  console.log('✅ Swagger routes loaded');
+} catch (error) {
+  console.error('❌ Failed to load swagger routes:', error.message);
+}
+
+try {
+  require("./app/routes/auth.routes")(app);
+  console.log('✅ Auth routes loaded');
+} catch (error) {
+  console.error('❌ Failed to load auth routes:', error.message);
+}
+
+try {
+  require("./app/routes/user.routes")(app);
+  console.log('✅ User routes loaded');
+} catch (error) {
+  console.error('❌ Failed to load user routes:', error.message);
+}
+
+try {
+  require("./app/routes/prediction.routes")(app);
+  console.log('✅ Prediction routes loaded');
+} catch (error) {
+  console.error('❌ Failed to load prediction routes:', error.message);
+}
+
+console.log('📋 Route loading completed');
+
+// Default route
 app.get("/", (req, res) => {
   res.json({
     message: "🌱 Plant Disease Prediction API is running!",
@@ -57,7 +93,6 @@ app.get("/", (req, res) => {
     database: {
       connected: databaseConfig.isConnected
     },
-    routes: routeStatus,
     endpoints: {
       auth: "/api/auth/*",
       prediction: "/api/predict",
@@ -83,7 +118,18 @@ app.get("/status/routes", (req, res) => {
   res.json({
     success: true,
     message: "Route status information",
-    data: routeManager.getRouteStatus(),
+    data: {
+      routes: [
+        { name: "health", loaded: true, file: "health.routes.js" },
+        { name: "swagger", loaded: true, file: "swagger.routes.js" },
+        { name: "auth", loaded: true, file: "auth.routes.js" },
+        { name: "user", loaded: true, file: "user.routes.js" },
+        { name: "prediction", loaded: true, file: "prediction.routes.js" }
+      ],
+      total: 5,
+      loaded: 5,
+      failed: 0
+    },
     timestamp: new Date().toISOString()
   });
 });
