@@ -1,519 +1,63 @@
-// server.js - VERCEL SWAGGER FIX (Replace existing server.js)
+// server.js - Alternative version with Route Manager
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
-const mongoose = require("mongoose");
-const path = require("path");
-const { limiter } = require("./app/utils/rateLimiter");
 
+// Import configurations
+const databaseConfig = require("./app/config/database.config");
+const corsConfig = require("./app/config/cors.config");
+const routeManager = require("./app/routes");
+const { limiter } = require("./app/utils/rateLimiter");
+const { errorHandler } = require("./app/middleware/errorHandler");
+
+// Initialize Express app
 const app = express();
 
+// Trust proxy for production (Vercel)
 app.set('trust proxy', 1);
 
-// Database connection dengan auto-seed
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.DB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log("Connected to MongoDB successfully!");
-
-    // Auto-seed database jika di production dan belum ada data
-    if (process.env.NODE_ENV === 'production') {
-      await autoSeedDatabase();
-    }
-  } catch (error) {
-    console.error("MongoDB connection error:", error);
-    process.exit(1);
-  }
-};
-
-// Auto-seed function
-const autoSeedDatabase = async () => {
-  try {
-    const Role = require("./app/models/role.model");
-    const User = require("./app/models/user.model");
-    const bcrypt = require("bcryptjs");
-
-    // Check if roles already exist
-    const roleCount = await Role.countDocuments();
-    if (roleCount > 0) {
-      console.log("Database already seeded, skipping...");
-      return;
-    }
-
-    console.log("Auto-seeding database...");
-
-    // Seed roles
-    const roles = ["user", "admin", "moderator"];
-    const createdRoles = {};
-
-    for (let roleName of roles) {
-      const role = await new Role({ name: roleName }).save();
-      createdRoles[roleName] = role;
-      console.log(`Role '${roleName}' added.`);
-    }
-
-    // Seed admin user
-    const password = bcrypt.hashSync(process.env.ADMIN_PASSWORD || "adminpassword", 8);
-    const adminUser = new User({
-      username: process.env.ADMIN_USERNAME || "admin",
-      email: process.env.ADMIN_EMAIL || "admin@example.com",
-      password,
-      roles: [createdRoles.admin._id]
-    });
-
-    await adminUser.save();
-    console.log("Admin user created successfully!");
-
-  } catch (error) {
-    console.error("Auto-seed error:", error);
-  }
-};
-
-// Connect to database
-connectDB();
-
-// Universal CORS configuration
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-
-    const localhostRegex = /^http:\/\/localhost:\d+$/;
-    const localhostIPRegex = /^http:\/\/127\.0\.0\.1:\d+$/;
-    const localhostIPv4Regex = /^http:\/\/192\.168\.\d+\.\d+:\d+$/;
-
-    if (localhostRegex.test(origin) || localhostIPRegex.test(origin) || localhostIPv4Regex.test(origin)) {
-      return callback(null, true);
-    }
-
-    if (origin.includes('ngrok.io') ||
-        origin.includes('ngrok-free.app') ||
-        origin.includes('ngrok.app') ||
-        origin.includes('ngrok.dev')) {
-      return callback(null, true);
-    }
-
-    if (origin.includes('vercel.app') ||
-        origin.includes('vercel.sh') ||
-        origin.includes('now.sh')) {
-      return callback(null, true);
-    }
-
-    if (origin.includes('netlify.app') ||
-        origin.includes('netlify.com')) {
-      return callback(null, true);
-    }
-
-    if (origin.includes('github.io')) {
-      return callback(null, true);
-    }
-
-    const allowedOrigins = (process.env.CLIENT_ORIGIN || '').split(',').filter(Boolean);
-    if (allowedOrigins.some(allowedOrigin => origin === allowedOrigin.trim())) {
-      return callback(null, true);
-    }
-
-    if (process.env.NODE_ENV === 'production' && origin.startsWith('https://')) {
-      return callback(null, true);
-    }
-
-    if (process.env.NODE_ENV !== 'production') {
-      return callback(null, true);
-    }
-
-    console.log('CORS blocked origin:', origin);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD', 'PATCH'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'x-access-token',
-    'Origin',
-    'X-Requested-With',
-    'Accept',
-    'Access-Control-Request-Method',
-    'Access-Control-Request-Headers'
-  ],
-  credentials: true,
-  optionsSuccessStatus: 200,
-  preflightContinue: false
-};
-
-// Middleware
+// Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: false // Disable CSP for Swagger UI
 }));
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+// CORS middleware
+app.use(cors(corsConfig.getCorsOptions()));
+app.options('*', cors(corsConfig.getCorsOptions()));
 
+// Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Logging middleware (only in development)
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan("combined"));
 }
 
+// Rate limiting middleware
 app.use(limiter);
 
-// =====================================================
-// SIMPLE SWAGGER CONFIGURATION THAT WORKS ON VERCEL
-// =====================================================
+// Connect to database
+databaseConfig.connect();
 
-// Swagger JSON configuration
-const getSwaggerDoc = (req) => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const host = req.get('host');
-  const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-  
-  return {
-    "swagger": "2.0",
-    "info": {
-      "version": "2.0.0",
-      "title": "Plant Disease Prediction API",
-      "description": "API untuk prediksi penyakit tanaman menggunakan AI"
-    },
-    "host": host,
-    "schemes": [protocol],
-    "basePath": "/",
-    "consumes": ["application/json", "multipart/form-data"],
-    "produces": ["application/json"],
-    "securityDefinitions": {
-      "Bearer": {
-        "type": "apiKey",
-        "name": "x-access-token",
-        "in": "header",
-        "description": "JWT token untuk authentication"
-      }
-    },
-    "tags": [
-      { "name": "Health", "description": "Health check endpoints" },
-      { "name": "Auth", "description": "Authentication endpoints" },
-      { "name": "Prediction", "description": "Plant disease prediction endpoints" },
-      { "name": "User", "description": "User management endpoints" }
-    ],
-    "paths": {
-      "/health": {
-        "get": {
-          "tags": ["Health"],
-          "summary": "Health check",
-          "responses": {
-            "200": { "description": "API is healthy" }
-          }
-        }
-      },
-      "/api/model/health": {
-        "get": {
-          "tags": ["Prediction"],
-          "summary": "Check ML model health",
-          "responses": {
-            "200": { "description": "Model health information" }
-          }
-        }
-      },
-      "/api/auth/signup": {
-        "post": {
-          "tags": ["Auth"],
-          "summary": "Register new user",
-          "parameters": [{
-            "in": "body",
-            "name": "body",
-            "schema": {
-              "type": "object",
-              "required": ["username", "email", "password"],
-              "properties": {
-                "username": { "type": "string", "example": "john_doe" },
-                "email": { "type": "string", "example": "john@example.com" },
-                "password": { "type": "string", "example": "password123" }
-              }
-            }
-          }],
-          "responses": {
-            "200": { "description": "User registered successfully" },
-            "400": { "description": "Bad request" }
-          }
-        }
-      },
-      "/api/auth/signin": {
-        "post": {
-          "tags": ["Auth"],
-          "summary": "User login",
-          "parameters": [{
-            "in": "body",
-            "name": "body",
-            "schema": {
-              "type": "object",
-              "required": ["username", "password"],
-              "properties": {
-                "username": { "type": "string", "example": "john_doe" },
-                "password": { "type": "string", "example": "password123" }
-              }
-            }
-          }],
-          "responses": {
-            "200": { "description": "Login successful" },
-            "401": { "description": "Invalid credentials" }
-          }
-        }
-      },
-      "/api/predict": {
-        "post": {
-          "tags": ["Prediction"],
-          "summary": "Predict plant disease",
-          "consumes": ["multipart/form-data"],
-          "parameters": [
-            {
-              "in": "formData",
-              "name": "image",
-              "type": "file",
-              "required": true,
-              "description": "Plant leaf image"
-            },
-            {
-              "in": "header",
-              "name": "x-access-token",
-              "type": "string",
-              "required": false,
-              "description": "Optional JWT token"
-            }
-          ],
-          "responses": {
-            "200": { "description": "Prediction successful" },
-            "400": { "description": "Invalid image" }
-          }
-        }
-      },
-      "/api/predictions/history": {
-        "get": {
-          "tags": ["Prediction"],
-          "summary": "Get prediction history",
-          "security": [{ "Bearer": [] }],
-          "responses": {
-            "200": { "description": "History retrieved" },
-            "401": { "description": "Authentication required" }
-          }
-        }
-      },
-      "/api/user/profile": {
-        "get": {
-          "tags": ["User"],
-          "summary": "Get user profile",
-          "security": [{ "Bearer": [] }],
-          "responses": {
-            "200": { "description": "Profile retrieved" },
-            "401": { "description": "Authentication required" }
-          }
-        }
-      }
-    }
-  };
-};
+// Setup all routes using route manager
+const routeStatus = routeManager.setupRoutes(app);
 
-// Serve Swagger JSON
-app.get('/api/docs/swagger.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.json(getSwaggerDoc(req));
-});
-
-app.get('/api/docs', (req, res) => {
-  const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-  const swaggerJsonUrl = `${protocol}://${req.get('host')}/api/docs/swagger.json`;
-  
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="SwaggerUI" />
-  <title>Plant Disease API Documentation</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
-  <style>
-    body { 
-      margin: 0; 
-      padding: 0; 
-      font-family: Arial, sans-serif; 
-      background-color: #f7f7f7;
-    }
-    .swagger-ui .topbar { 
-      display: none; 
-    }
-    .swagger-ui .info { 
-      margin: 20px 0; 
-    }
-    .swagger-ui .info .title {
-      color: #3b4151;
-      font-size: 36px;
-      margin-bottom: 10px;
-    }
-    .loading { 
-      text-align: center; 
-      padding: 50px; 
-      font-size: 18px; 
-      color: #666;
-    }
-    .error-container {
-      padding: 50px;
-      text-align: center;
-      background-color: #fff;
-      margin: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    .error-container h2 {
-      color: #e74c3c;
-      margin-bottom: 15px;
-    }
-    .error-container p {
-      color: #666;
-      margin: 10px 0;
-    }
-    .error-container a {
-      color: #3498db;
-      text-decoration: none;
-      padding: 8px 16px;
-      background: #ecf0f1;
-      border-radius: 4px;
-      display: inline-block;
-      margin: 5px;
-    }
-    .error-container a:hover {
-      background: #bdc3c7;
-    }
-    .swagger-ui .wrapper {
-      padding: 0 20px;
-    }
-  </style>
-</head>
-<body>
-  <div id="swagger-ui">
-    <div class="loading">
-      <h2>🌱 Loading Plant Disease API Documentation...</h2>
-      <p>Please wait while we load the API documentation.</p>
-    </div>
-  </div>
-  
-  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js" crossorigin></script>
-  <script>
-    try {
-      console.log('Initializing Swagger UI...');
-      console.log('Swagger JSON URL:', '${swaggerJsonUrl}');
-      
-      window.onload = function() {
-        try {
-          const ui = SwaggerUIBundle({
-            url: '${swaggerJsonUrl}',
-            dom_id: '#swagger-ui',
-            deepLinking: true,
-            presets: [
-              SwaggerUIBundle.presets.apis,
-              SwaggerUIBundle.presets.standalone
-            ],
-            plugins: [
-              SwaggerUIBundle.plugins.DownloadUrl
-            ],
-            tryItOutEnabled: true,
-            supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
-            validatorUrl: null, // Disable validator
-            defaultModelsExpandDepth: 1,
-            defaultModelExpandDepth: 1,
-            docExpansion: 'list', // 'list', 'full', 'none'
-            requestInterceptor: function(req) {
-              // Add CORS headers for try-it-out
-              req.headers['Access-Control-Allow-Origin'] = '*';
-              return req;
-            },
-            responseInterceptor: function(response) {
-              console.log('API Response:', response);
-              return response;
-            },
-            onComplete: function() {
-              console.log('✅ Swagger UI loaded successfully');
-              // Hide loading indicator
-              const loadingEl = document.querySelector('.loading');
-              if (loadingEl) {
-                loadingEl.style.display = 'none';
-              }
-            },
-            onFailure: function(err) {
-              console.error('❌ Swagger UI failed to load:', err);
-              document.getElementById('swagger-ui').innerHTML = 
-                '<div class="error-container">' +
-                '<h2>🚫 Failed to Load API Documentation</h2>' +
-                '<p><strong>Error:</strong> ' + (err.message || 'Unknown error occurred') + '</p>' +
-                '<p>Please try the following:</p>' +
-                '<a href="/health">Check API Health</a>' +
-                '<a href="/api/docs/swagger.json">View Raw JSON</a>' +
-                '<a href="javascript:location.reload()">Reload Page</a>' +
-                '</div>';
-            }
-          });
-          
-          // Store reference globally for debugging
-          window.ui = ui;
-          
-        } catch (initError) {
-          console.error('Initialization error:', initError);
-          document.getElementById('swagger-ui').innerHTML = 
-            '<div class="error-container">' +
-            '<h2>⚠️ Initialization Error</h2>' +
-            '<p><strong>Error:</strong> ' + initError.message + '</p>' +
-            '<p>Your browser might not support this version of Swagger UI.</p>' +
-            '<a href="/health">Check API Health</a>' +
-            '<a href="/api/docs/swagger.json">View Raw JSON</a>' +
-            '</div>';
-        }
-      };
-      
-    } catch (scriptError) {
-      console.error('Script error:', scriptError);
-      document.getElementById('swagger-ui').innerHTML = 
-        '<div class="error-container">' +
-        '<h2>🔧 Script Loading Error</h2>' +
-        '<p><strong>Error:</strong> ' + scriptError.message + '</p>' +
-        '<p>Please check your internet connection and try again.</p>' +
-        '<a href="javascript:location.reload()">Reload Page</a>' +
-        '</div>';
-    }
-  </script>
-</body>
-</html>`;
-
-  res.setHeader('Content-Type', 'text/html');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.send(html);
-});
-
-// Routes
-require("./app/routes/auth.routes")(app);
-require("./app/routes/user.routes")(app);
-require("./app/routes/prediction.routes")(app);
-
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    swagger: "Available at /api/docs",
-    api_version: "2.0.0"
-  });
-});
-
-// Default route
+// Default route with route status
 app.get("/", (req, res) => {
   res.json({
     message: "🌱 Plant Disease Prediction API is running!",
     version: "2.0.0",
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    database: {
+      connected: databaseConfig.isConnected
+    },
+    routes: routeStatus,
     endpoints: {
       auth: "/api/auth/*",
       prediction: "/api/predict",
@@ -524,22 +68,112 @@ app.get("/", (req, res) => {
     documentation: {
       swagger_ui: "/api/docs",
       swagger_json: "/api/docs/swagger.json"
+    },
+    health_checks: {
+      basic: "/health",
+      database: "/health/database",
+      system: "/health/system",
+      endpoints: "/health/endpoints"
     }
   });
 });
 
-// Error handling middleware
-const { errorHandler } = require("./app/middleware/errorHandler");
+// Route status endpoint
+app.get("/status/routes", (req, res) => {
+  res.json({
+    success: true,
+    message: "Route status information",
+    data: routeManager.getRouteStatus(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 404 handler for undefined routes
+app.use("*", (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+    path: req.originalUrl,
+    method: req.method,
+    available_endpoints: {
+      docs: "/api/docs",
+      health: "/health",
+      auth: "/api/auth/*",
+      predict: "/api/predict",
+      route_status: "/status/routes"
+    }
+  });
+});
+
+// Error handling middleware (should be last)
 app.use(errorHandler);
 
-// Server start (only if not in Vercel)
+// Graceful shutdown handling
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  await databaseConfig.disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, shutting down gracefully');
+  await databaseConfig.disconnect();
+  process.exit(0);
+});
+
+// Start server (only if not in Vercel)
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   const PORT = process.env.PORT || 8000;
-  app.listen(PORT, () => {
+  
+  const server = app.listen(PORT, () => {
+    console.log('🚀 ================================');
     console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log('🚀 ================================');
     console.log(`📚 API Documentation: http://localhost:${PORT}/api/docs`);
     console.log(`🔍 Health Check: http://localhost:${PORT}/health`);
+    console.log(`📋 Route Status: http://localhost:${PORT}/status/routes`);
     console.log(`📋 Swagger JSON: http://localhost:${PORT}/api/docs/swagger.json`);
+    console.log('🚀 ================================');
+    
+    // Log database connection status after a delay
+    setTimeout(async () => {
+      console.log(`💾 Database: ${databaseConfig.isConnected ? '✅ Connected' : '❌ Disconnected'}`);
+      
+      if (databaseConfig.isConnected) {
+        try {
+          const dbHealth = await databaseConfig.getHealthStatus();
+          console.log(`💾 Database Name: ${dbHealth.connection.name || 'unknown'}`);
+          console.log(`💾 Collections: ${JSON.stringify(dbHealth.collections || {})}`);
+        } catch (error) {
+          console.log(`💾 Database Error: ${error.message}`);
+        }
+      }
+      
+      console.log('🚀 ================================');
+    }, 3000);
+  });
+
+  // Handle server errors
+  server.on('error', (error) => {
+    if (error.syscall !== 'listen') {
+      throw error;
+    }
+
+    const bind = typeof PORT === 'string' ? 'Pipe ' + PORT : 'Port ' + PORT;
+
+    switch (error.code) {
+      case 'EACCES':
+        console.error(bind + ' requires elevated privileges');
+        process.exit(1);
+        break;
+      case 'EADDRINUSE':
+        console.error(bind + ' is already in use');
+        process.exit(1);
+        break;
+      default:
+        throw error;
+    }
   });
 }
 
