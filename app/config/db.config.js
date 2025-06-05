@@ -1,6 +1,6 @@
 module.exports = {
-  HOST: process.env.DB_HOST || "localhost",
-  PORT: process.env.DB_PORT || 27017,
-  DB: process.env.DB_NAME || "leaves-disease",
-  URI: process.env.DB_URI || "mongodb://127.0.0.1:27017/leaves-disease"
+  HOST: process.env.DB_HOST,
+  PORT: process.env.DB_PORT,
+  DB: process.env.DB_NAME,
+  URI: process.env.DB_URI 
 };

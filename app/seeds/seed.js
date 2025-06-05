@@ -9,7 +9,7 @@ require("dotenv").config();
 
 const seedDatabase = async () => {
   try {
-    const dbUri = process.env.DB_URI || "mongodb://127.0.0.1:27017/auth_service";
+    const dbUri = process.env.DB_URI;
     
     // Update mongoose connection for v7+
     await mongoose.connect(dbUri);
