@@ -1,29 +1,11 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { put } = require('@vercel/blob');
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Storage configuration
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir);
-  },
-  filename: function (req, file, cb) {
-    // Generate unique filename
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const extension = path.extname(file.originalname).toLowerCase();
-    cb(null, 'plant-' + uniqueSuffix + extension);
-  }
-});
+// Memory storage untuk Vercel Blob
+const storage = multer.memoryStorage();
 
 // File filter
 const fileFilter = (req, file, cb) => {
-  // Check file type
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
   
   if (allowedTypes.includes(file.mimetype)) {
@@ -43,8 +25,49 @@ const upload = multer({
   }
 });
 
+// Middleware untuk upload ke Vercel Blob
+const uploadToBlob = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return next();
+    }
+
+    // Generate unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = req.file.originalname.split('.').pop().toLowerCase();
+    const filename = `plant-${uniqueSuffix}.${extension}`;
+
+    // Upload to Vercel Blob
+    const blob = await put(filename, req.file.buffer, {
+      access: 'public',
+      token: process.env.BLOB_READ_WRITE_TOKEN
+    });
+
+    // Add blob info to request
+    req.blob = {
+      url: blob.url,
+      filename: filename,
+      originalname: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    };
+
+    next();
+  } catch (error) {
+    console.error('Blob upload error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload image to storage',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Storage error'
+    });
+  }
+};
+
 // Middleware untuk single file upload
-const uploadSingle = upload.single('image');
+const uploadSingle = [
+  upload.single('image'),
+  uploadToBlob
+];
 
 // Error handling middleware
 const handleUploadErrors = (err, req, res, next) => {

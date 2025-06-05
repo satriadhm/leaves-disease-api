@@ -77,75 +77,102 @@ const autoSeedDatabase = async () => {
 // Connect to database
 connectDB();
 
-// Fixed CORS configuration untuk mendukung ngrok dan berbagai environment
+// Universal CORS configuration yang lebih permisif
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    // Development origins
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:3001', 
-      'http://localhost:8080',
-      'http://localhost:8081',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:8080',
-      'http://127.0.0.1:8081',
-    ];
-
-    // Add process.env.CLIENT_ORIGIN if set
-    if (process.env.CLIENT_ORIGIN) {
-      allowedOrigins.push(process.env.CLIENT_ORIGIN);
+    // Development: Allow localhost dengan berbagai port
+    const localhostRegex = /^http:\/\/localhost:\d+$/;
+    const localhostIPRegex = /^http:\/\/127\.0\.0\.1:\d+$/;
+    const localhostIPv4Regex = /^http:\/\/192\.168\.\d+\.\d+:\d+$/;
+    
+    if (localhostRegex.test(origin) || localhostIPRegex.test(origin) || localhostIPv4Regex.test(origin)) {
+      return callback(null, true);
     }
 
-    // Allow all ngrok domains
-    if (origin.includes('ngrok.io') || origin.includes('ngrok-free.app')) {
+    // Allow ngrok domains
+    if (origin.includes('ngrok.io') || 
+        origin.includes('ngrok-free.app') || 
+        origin.includes('ngrok.app') ||
+        origin.includes('ngrok.dev')) {
       return callback(null, true);
     }
 
     // Allow Vercel deployments
-    if (origin.includes('vercel.app')) {
+    if (origin.includes('vercel.app') || 
+        origin.includes('vercel.sh') ||
+        origin.includes('now.sh')) {
       return callback(null, true);
     }
 
-    // Check if origin is in allowed list
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Allow Netlify deployments
+    if (origin.includes('netlify.app') || 
+        origin.includes('netlify.com')) {
       return callback(null, true);
     }
 
-    // For production, you might want to be more restrictive
-    if (process.env.NODE_ENV === 'production') {
-      console.log('Blocked origin:', origin);
-      return callback(new Error('Not allowed by CORS'));
+    // Allow GitHub Pages
+    if (origin.includes('github.io')) {
+      return callback(null, true);
     }
 
-    // Allow all in development
-    return callback(null, true);
+    // Allow custom domains from environment
+    const allowedOrigins = (process.env.CLIENT_ORIGIN || '').split(',').filter(Boolean);
+    if (allowedOrigins.some(allowedOrigin => origin === allowedOrigin.trim())) {
+      return callback(null, true);
+    }
+
+    // Allow HTTPS domains in production
+    if (process.env.NODE_ENV === 'production' && origin.startsWith('https://')) {
+      return callback(null, true);
+    }
+
+    // In development, allow all origins
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+
+    console.log('CORS blocked origin:', origin);
+    return callback(new Error('Not allowed by CORS'));
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'x-access-token',
+    'Origin',
+    'X-Requested-With',
+    'Accept',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
+  ],
   credentials: true,
-  optionsSuccessStatus: 200 // untuk legacy browser support
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 };
 
 // Middleware
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false
 }));
-app.use(cors(corsOptions));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Conditional logging (skip in production untuk performance)
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Conditional logging
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan("combined"));
 }
 
 app.use(limiter);
-
-// Serve uploaded images statically
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
 require("./app/routes/auth.routes")(app);
@@ -158,7 +185,8 @@ app.get("/health", (req, res) => {
   res.json({ 
     status: "OK",
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    cors: "Universal CORS enabled"
   });
 });
 
@@ -176,7 +204,7 @@ app.get("/", (req, res) => {
     },
     cors: {
       enabled: true,
-      allowedOrigins: "Dynamic based on request origin"
+      policy: "Universal - allows development and production domains"
     }
   });
 });
