@@ -322,7 +322,6 @@ app.get('/api/docs/swagger.json', (req, res) => {
   res.json(getSwaggerDoc(req));
 });
 
-// Serve Swagger UI HTML (Custom implementation)
 app.get('/api/docs', (req, res) => {
   const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
   const swaggerJsonUrl = `${protocol}://${req.get('host')}/api/docs/swagger.json`;
@@ -337,63 +336,150 @@ app.get('/api/docs', (req, res) => {
   <title>Plant Disease API Documentation</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
   <style>
-    body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-    .swagger-ui .topbar { display: none; }
-    .swagger-ui .info { margin: 20px 0; }
+    body { 
+      margin: 0; 
+      padding: 0; 
+      font-family: Arial, sans-serif; 
+      background-color: #f7f7f7;
+    }
+    .swagger-ui .topbar { 
+      display: none; 
+    }
+    .swagger-ui .info { 
+      margin: 20px 0; 
+    }
+    .swagger-ui .info .title {
+      color: #3b4151;
+      font-size: 36px;
+      margin-bottom: 10px;
+    }
     .loading { 
       text-align: center; 
       padding: 50px; 
       font-size: 18px; 
       color: #666;
     }
+    .error-container {
+      padding: 50px;
+      text-align: center;
+      background-color: #fff;
+      margin: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .error-container h2 {
+      color: #e74c3c;
+      margin-bottom: 15px;
+    }
+    .error-container p {
+      color: #666;
+      margin: 10px 0;
+    }
+    .error-container a {
+      color: #3498db;
+      text-decoration: none;
+      padding: 8px 16px;
+      background: #ecf0f1;
+      border-radius: 4px;
+      display: inline-block;
+      margin: 5px;
+    }
+    .error-container a:hover {
+      background: #bdc3c7;
+    }
+    .swagger-ui .wrapper {
+      padding: 0 20px;
+    }
   </style>
 </head>
 <body>
   <div id="swagger-ui">
-    <div class="loading">Loading API Documentation...</div>
+    <div class="loading">
+      <h2>🌱 Loading Plant Disease API Documentation...</h2>
+      <p>Please wait while we load the API documentation.</p>
+    </div>
   </div>
+  
   <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js" crossorigin></script>
   <script>
     try {
+      console.log('Initializing Swagger UI...');
+      console.log('Swagger JSON URL:', '${swaggerJsonUrl}');
+      
       window.onload = function() {
-        window.ui = SwaggerUIBundle({
-          url: '${swaggerJsonUrl}',
-          dom_id: '#swagger-ui',
-          deepLinking: true,
-          presets: [
-            SwaggerUIBundle.presets.apis,
-            SwaggerUIBundle.presets.standalone
-          ],
-          plugins: [
-            SwaggerUIBundle.plugins.DownloadUrl
-          ],
-          layout: "StandaloneLayout",
-          tryItOutEnabled: true,
-          requestInterceptor: function(req) {
-            // Add CORS headers for try-it-out
-            req.headers['Access-Control-Allow-Origin'] = '*';
-            return req;
-          },
-          onComplete: function() {
-            console.log('Swagger UI loaded successfully');
-          },
-          onFailure: function(err) {
-            console.error('Swagger UI failed to load:', err);
-            document.getElementById('swagger-ui').innerHTML = 
-              '<div style="padding: 50px; text-align: center;">' +
-              '<h2>Failed to load API documentation</h2>' +
-              '<p>Error: ' + err.message + '</p>' +
-              '<p><a href="/health">Check API Health</a></p>' +
-              '</div>';
-          }
-        });
+        try {
+          const ui = SwaggerUIBundle({
+            url: '${swaggerJsonUrl}',
+            dom_id: '#swagger-ui',
+            deepLinking: true,
+            presets: [
+              SwaggerUIBundle.presets.apis,
+              SwaggerUIBundle.presets.standalone
+            ],
+            plugins: [
+              SwaggerUIBundle.plugins.DownloadUrl
+            ],
+            tryItOutEnabled: true,
+            supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
+            validatorUrl: null, // Disable validator
+            defaultModelsExpandDepth: 1,
+            defaultModelExpandDepth: 1,
+            docExpansion: 'list', // 'list', 'full', 'none'
+            requestInterceptor: function(req) {
+              // Add CORS headers for try-it-out
+              req.headers['Access-Control-Allow-Origin'] = '*';
+              return req;
+            },
+            responseInterceptor: function(response) {
+              console.log('API Response:', response);
+              return response;
+            },
+            onComplete: function() {
+              console.log('✅ Swagger UI loaded successfully');
+              // Hide loading indicator
+              const loadingEl = document.querySelector('.loading');
+              if (loadingEl) {
+                loadingEl.style.display = 'none';
+              }
+            },
+            onFailure: function(err) {
+              console.error('❌ Swagger UI failed to load:', err);
+              document.getElementById('swagger-ui').innerHTML = 
+                '<div class="error-container">' +
+                '<h2>🚫 Failed to Load API Documentation</h2>' +
+                '<p><strong>Error:</strong> ' + (err.message || 'Unknown error occurred') + '</p>' +
+                '<p>Please try the following:</p>' +
+                '<a href="/health">Check API Health</a>' +
+                '<a href="/api/docs/swagger.json">View Raw JSON</a>' +
+                '<a href="javascript:location.reload()">Reload Page</a>' +
+                '</div>';
+            }
+          });
+          
+          // Store reference globally for debugging
+          window.ui = ui;
+          
+        } catch (initError) {
+          console.error('Initialization error:', initError);
+          document.getElementById('swagger-ui').innerHTML = 
+            '<div class="error-container">' +
+            '<h2>⚠️ Initialization Error</h2>' +
+            '<p><strong>Error:</strong> ' + initError.message + '</p>' +
+            '<p>Your browser might not support this version of Swagger UI.</p>' +
+            '<a href="/health">Check API Health</a>' +
+            '<a href="/api/docs/swagger.json">View Raw JSON</a>' +
+            '</div>';
+        }
       };
-    } catch (err) {
-      console.error('Error initializing Swagger UI:', err);
+      
+    } catch (scriptError) {
+      console.error('Script error:', scriptError);
       document.getElementById('swagger-ui').innerHTML = 
-        '<div style="padding: 50px; text-align: center;">' +
-        '<h2>Error loading documentation</h2>' +
-        '<p>' + err.message + '</p>' +
+        '<div class="error-container">' +
+        '<h2>🔧 Script Loading Error</h2>' +
+        '<p><strong>Error:</strong> ' + scriptError.message + '</p>' +
+        '<p>Please check your internet connection and try again.</p>' +
+        '<a href="javascript:location.reload()">Reload Page</a>' +
         '</div>';
     }
   </script>
@@ -401,6 +487,9 @@ app.get('/api/docs', (req, res) => {
 </html>`;
 
   res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.send(html);
 });
 

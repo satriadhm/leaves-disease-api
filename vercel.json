@@ -43,29 +43,17 @@
       "maxDuration": 30
     }
   },
-  "headers": [
+ "headers": [
     {
       "source": "/api/docs/(.*)",
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https:; font-src 'self' https://unpkg.com"
+          "value": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https:; font-src 'self' https://unpkg.com"
         },
         {
           "key": "X-Frame-Options",
           "value": "SAMEORIGIN"
-        },
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, PUT, DELETE, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization, x-access-token"
         }
       ]
     }
