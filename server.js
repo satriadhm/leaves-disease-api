@@ -1,4 +1,4 @@
-// server.js - Fixed Swagger Configuration
+// server.js - VERCEL SWAGGER FIX (Replace existing server.js)
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -7,8 +7,6 @@ const morgan = require("morgan");
 const mongoose = require("mongoose");
 const path = require("path");
 const { limiter } = require("./app/utils/rateLimiter");
-const swaggerUi = require("swagger-ui-express");
-const baseSwaggerConfig = require("./app/config/swagger.config");
 
 const app = express();
 
@@ -79,13 +77,11 @@ const autoSeedDatabase = async () => {
 // Connect to database
 connectDB();
 
-// Universal CORS configuration yang lebih permisif
+// Universal CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
 
-    // Development: Allow localhost dengan berbagai port
     const localhostRegex = /^http:\/\/localhost:\d+$/;
     const localhostIPRegex = /^http:\/\/127\.0\.0\.1:\d+$/;
     const localhostIPv4Regex = /^http:\/\/192\.168\.\d+\.\d+:\d+$/;
@@ -94,7 +90,6 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Allow ngrok domains
     if (origin.includes('ngrok.io') ||
         origin.includes('ngrok-free.app') ||
         origin.includes('ngrok.app') ||
@@ -102,36 +97,30 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Allow Vercel deployments
     if (origin.includes('vercel.app') ||
         origin.includes('vercel.sh') ||
         origin.includes('now.sh')) {
       return callback(null, true);
     }
 
-    // Allow Netlify deployments
     if (origin.includes('netlify.app') ||
         origin.includes('netlify.com')) {
       return callback(null, true);
     }
 
-    // Allow GitHub Pages
     if (origin.includes('github.io')) {
       return callback(null, true);
     }
 
-    // Allow custom domains from environment
     const allowedOrigins = (process.env.CLIENT_ORIGIN || '').split(',').filter(Boolean);
     if (allowedOrigins.some(allowedOrigin => origin === allowedOrigin.trim())) {
       return callback(null, true);
     }
 
-    // Allow HTTPS domains in production
     if (process.env.NODE_ENV === 'production' && origin.startsWith('https://')) {
       return callback(null, true);
     }
 
-    // In development, allow all origins
     if (process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
@@ -158,52 +147,261 @@ const corsOptions = {
 // Middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false // Disable CSP for Swagger UI
 }));
 
 app.use(cors(corsOptions));
-
-// Handle preflight requests
 app.options('*', cors(corsOptions));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Conditional logging
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan("combined"));
 }
 
 app.use(limiter);
 
-// FIXED: Swagger UI Configuration
-// Create dynamic swagger config function
-const createSwaggerConfig = (req) => {
-  const dynamicConfig = { ...baseSwaggerConfig };
+// =====================================================
+// SIMPLE SWAGGER CONFIGURATION THAT WORKS ON VERCEL
+// =====================================================
+
+// Swagger JSON configuration
+const getSwaggerDoc = (req) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const host = req.get('host');
+  const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
   
-  // Set host based on request
-  dynamicConfig.host = req.get('host');
-  
-  // Set scheme based on request
-  const scheme = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-  dynamicConfig.schemes = [scheme];
-  
-  return dynamicConfig;
+  return {
+    "swagger": "2.0",
+    "info": {
+      "version": "2.0.0",
+      "title": "Plant Disease Prediction API",
+      "description": "API untuk prediksi penyakit tanaman menggunakan AI"
+    },
+    "host": host,
+    "schemes": [protocol],
+    "basePath": "/",
+    "consumes": ["application/json", "multipart/form-data"],
+    "produces": ["application/json"],
+    "securityDefinitions": {
+      "Bearer": {
+        "type": "apiKey",
+        "name": "x-access-token",
+        "in": "header",
+        "description": "JWT token untuk authentication"
+      }
+    },
+    "tags": [
+      { "name": "Health", "description": "Health check endpoints" },
+      { "name": "Auth", "description": "Authentication endpoints" },
+      { "name": "Prediction", "description": "Plant disease prediction endpoints" },
+      { "name": "User", "description": "User management endpoints" }
+    ],
+    "paths": {
+      "/health": {
+        "get": {
+          "tags": ["Health"],
+          "summary": "Health check",
+          "responses": {
+            "200": { "description": "API is healthy" }
+          }
+        }
+      },
+      "/api/model/health": {
+        "get": {
+          "tags": ["Prediction"],
+          "summary": "Check ML model health",
+          "responses": {
+            "200": { "description": "Model health information" }
+          }
+        }
+      },
+      "/api/auth/signup": {
+        "post": {
+          "tags": ["Auth"],
+          "summary": "Register new user",
+          "parameters": [{
+            "in": "body",
+            "name": "body",
+            "schema": {
+              "type": "object",
+              "required": ["username", "email", "password"],
+              "properties": {
+                "username": { "type": "string", "example": "john_doe" },
+                "email": { "type": "string", "example": "john@example.com" },
+                "password": { "type": "string", "example": "password123" }
+              }
+            }
+          }],
+          "responses": {
+            "200": { "description": "User registered successfully" },
+            "400": { "description": "Bad request" }
+          }
+        }
+      },
+      "/api/auth/signin": {
+        "post": {
+          "tags": ["Auth"],
+          "summary": "User login",
+          "parameters": [{
+            "in": "body",
+            "name": "body",
+            "schema": {
+              "type": "object",
+              "required": ["username", "password"],
+              "properties": {
+                "username": { "type": "string", "example": "john_doe" },
+                "password": { "type": "string", "example": "password123" }
+              }
+            }
+          }],
+          "responses": {
+            "200": { "description": "Login successful" },
+            "401": { "description": "Invalid credentials" }
+          }
+        }
+      },
+      "/api/predict": {
+        "post": {
+          "tags": ["Prediction"],
+          "summary": "Predict plant disease",
+          "consumes": ["multipart/form-data"],
+          "parameters": [
+            {
+              "in": "formData",
+              "name": "image",
+              "type": "file",
+              "required": true,
+              "description": "Plant leaf image"
+            },
+            {
+              "in": "header",
+              "name": "x-access-token",
+              "type": "string",
+              "required": false,
+              "description": "Optional JWT token"
+            }
+          ],
+          "responses": {
+            "200": { "description": "Prediction successful" },
+            "400": { "description": "Invalid image" }
+          }
+        }
+      },
+      "/api/predictions/history": {
+        "get": {
+          "tags": ["Prediction"],
+          "summary": "Get prediction history",
+          "security": [{ "Bearer": [] }],
+          "responses": {
+            "200": { "description": "History retrieved" },
+            "401": { "description": "Authentication required" }
+          }
+        }
+      },
+      "/api/user/profile": {
+        "get": {
+          "tags": ["User"],
+          "summary": "Get user profile",
+          "security": [{ "Bearer": [] }],
+          "responses": {
+            "200": { "description": "Profile retrieved" },
+            "401": { "description": "Authentication required" }
+          }
+        }
+      }
+    }
+  };
 };
 
-// Swagger UI routes - FIXED order and configuration
-app.use('/api/docs', swaggerUi.serve);
-app.get('/api/docs', (req, res, next) => {
-  const swaggerConfig = createSwaggerConfig(req);
-  const swaggerUiHandler = swaggerUi.setup(swaggerConfig, {
-    explorer: true,
-    swaggerOptions: {
-      docExpansion: 'none',
-      filter: true,
-      showRequestHeaders: true,
+// Serve Swagger JSON
+app.get('/api/docs/swagger.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json(getSwaggerDoc(req));
+});
+
+// Serve Swagger UI HTML (Custom implementation)
+app.get('/api/docs', (req, res) => {
+  const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+  const swaggerJsonUrl = `${protocol}://${req.get('host')}/api/docs/swagger.json`;
+  
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="SwaggerUI" />
+  <title>Plant Disease API Documentation</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+  <style>
+    body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+    .swagger-ui .topbar { display: none; }
+    .swagger-ui .info { margin: 20px 0; }
+    .loading { 
+      text-align: center; 
+      padding: 50px; 
+      font-size: 18px; 
+      color: #666;
     }
-  });
-  swaggerUiHandler(req, res, next);
+  </style>
+</head>
+<body>
+  <div id="swagger-ui">
+    <div class="loading">Loading API Documentation...</div>
+  </div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js" crossorigin></script>
+  <script>
+    try {
+      window.onload = function() {
+        window.ui = SwaggerUIBundle({
+          url: '${swaggerJsonUrl}',
+          dom_id: '#swagger-ui',
+          deepLinking: true,
+          presets: [
+            SwaggerUIBundle.presets.apis,
+            SwaggerUIBundle.presets.standalone
+          ],
+          plugins: [
+            SwaggerUIBundle.plugins.DownloadUrl
+          ],
+          layout: "StandaloneLayout",
+          tryItOutEnabled: true,
+          requestInterceptor: function(req) {
+            // Add CORS headers for try-it-out
+            req.headers['Access-Control-Allow-Origin'] = '*';
+            return req;
+          },
+          onComplete: function() {
+            console.log('Swagger UI loaded successfully');
+          },
+          onFailure: function(err) {
+            console.error('Swagger UI failed to load:', err);
+            document.getElementById('swagger-ui').innerHTML = 
+              '<div style="padding: 50px; text-align: center;">' +
+              '<h2>Failed to load API documentation</h2>' +
+              '<p>Error: ' + err.message + '</p>' +
+              '<p><a href="/health">Check API Health</a></p>' +
+              '</div>';
+          }
+        });
+      };
+    } catch (err) {
+      console.error('Error initializing Swagger UI:', err);
+      document.getElementById('swagger-ui').innerHTML = 
+        '<div style="padding: 50px; text-align: center;">' +
+        '<h2>Error loading documentation</h2>' +
+        '<p>' + err.message + '</p>' +
+        '</div>';
+    }
+  </script>
+</body>
+</html>`;
+
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
 });
 
 // Routes
@@ -217,15 +415,15 @@ app.get("/health", (req, res) => {
     status: "OK",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
-    cors: "Universal CORS enabled",
-    swagger: "Available at /api/docs"
+    swagger: "Available at /api/docs",
+    api_version: "2.0.0"
   });
 });
 
 // Default route
 app.get("/", (req, res) => {
   res.json({
-    message: "Plant Disease Prediction API is running!",
+    message: "🌱 Plant Disease Prediction API is running!",
     version: "2.0.0",
     endpoints: {
       auth: "/api/auth/*",
@@ -234,9 +432,9 @@ app.get("/", (req, res) => {
       docs: "/api/docs",
       health: "/health"
     },
-    cors: {
-      enabled: true,
-      policy: "Universal - allows development and production domains"
+    documentation: {
+      swagger_ui: "/api/docs",
+      swagger_json: "/api/docs/swagger.json"
     }
   });
 });
@@ -249,9 +447,10 @@ app.use(errorHandler);
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   const PORT = process.env.PORT || 8000;
   app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`API Documentation available at http://localhost:${PORT}/api/docs`);
-    console.log(`Prediction endpoint: http://localhost:${PORT}/api/predict`);
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📚 API Documentation: http://localhost:${PORT}/api/docs`);
+    console.log(`🔍 Health Check: http://localhost:${PORT}/health`);
+    console.log(`📋 Swagger JSON: http://localhost:${PORT}/api/docs/swagger.json`);
   });
 }
 
