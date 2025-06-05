@@ -10,9 +10,13 @@ module.exports = {
       email: "glorioussatria@gmail.com"
     }
   },
-  host: "localhost:8000",
+   host: process.env.NODE_ENV === 'production' 
+    ? "leaves-disease-api.vercel.app" 
+    : "localhost:8000",
+  schemes: process.env.NODE_ENV === 'production' 
+    ? ["https"] 
+    : ["http", "https"],
   basePath: "/",
-  schemes: ["http", "https"],
   consumes: ["application/json"],
   produces: ["application/json"],
   securityDefinitions: {
