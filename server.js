@@ -12,7 +12,7 @@ const swaggerConfig = require("./app/config/swagger.config");
 
 const app = express();
 
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // Database connection dengan auto-seed
 const connectDB = async () => {
