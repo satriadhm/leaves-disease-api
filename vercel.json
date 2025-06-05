@@ -9,46 +9,40 @@
       }
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/docs/swagger.json",
-      "dest": "/server.js",
-      "methods": ["GET"],
-      "headers": {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Cache-Control": "no-cache, no-store, must-revalidate"
-      }
+      "source": "/api/docs/swagger.json",
+      "destination": "/server.js"
     },
     {
-      "src": "/api/docs",
-      "dest": "/server.js",
-      "methods": ["GET"],
-      "headers": {
-        "Content-Type": "text/html",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-cache, no-store, must-revalidate"
-      }
+      "source": "/api/docs",
+      "destination": "/server.js"
     },
     {
-      "src": "/health(.*)",
-      "dest": "/server.js",
-      "methods": ["GET"]
+      "source": "/docs",
+      "destination": "/server.js"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "/server.js"
+      "source": "/health/(.*)",
+      "destination": "/server.js"
     },
     {
-      "src": "/(.*)",
-      "dest": "/server.js"
+      "source": "/health",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/server.js"
     }
   ],
-  "env": {
-    "NODE_ENV": "production"
-  },
   "headers": [
     {
       "source": "/api/docs/(.*)",
@@ -72,6 +66,10 @@
         {
           "key": "Access-Control-Allow-Headers",
           "value": "Content-Type, Authorization, x-access-token"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
         }
       ]
     },
@@ -91,6 +89,22 @@
           "value": "Content-Type, Authorization, x-access-token, Origin, X-Requested-With, Accept"
         }
       ]
+    },
+    {
+      "source": "/health(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
     }
-  ]
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
 }
