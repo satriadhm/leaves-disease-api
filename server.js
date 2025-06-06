@@ -1,10 +1,11 @@
-// server.js - Railway Compatible Version
+// server.js - Railway Compatible Version with Nonce-based CSP
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const compression = require("compression");
+const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
 
@@ -35,6 +36,12 @@ if (process.env.NODE_ENV === 'production') {
 // Compression middleware for better performance
 app.use(compression());
 
+// Middleware to generate nonce for each request
+app.use((req, res, next) => {
+  res.locals.nonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
 // Ensure uploads directory exists
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -45,21 +52,28 @@ if (!fs.existsSync(uploadsDir)) {
 startPeriodicCleanup();
 console.log('🧹 Started periodic file cleanup service');
 
-// Security middleware
+// Security middleware with nonce-based CSP
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "unpkg.com"],
-      scriptSrc: ["'self'", "unpkg.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "unpkg.com", "cdn.jsdelivr.net"],
+      scriptSrc: [
+        "'self'", 
+        "unpkg.com", 
+        "cdn.jsdelivr.net",
+        (req, res) => `'nonce-${res.locals.nonce}'` // Dynamic nonce
+      ],
       imgSrc: ["'self'", "data:", "https:", "http:"], // Allow uploaded images
       connectSrc: ["'self'", "https:", "http:"],
       fontSrc: ["'self'", "https:", "data:"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
       frameSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
     },
   }
 }));
@@ -196,6 +210,10 @@ app.get("/", (req, res) => {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     platform: 'Railway',
+    security: {
+      csp: 'nonce-based',
+      https: process.env.NODE_ENV === 'production'
+    },
     database: {
       connected: databaseConfig.isConnected
     },
@@ -307,13 +325,43 @@ app.get("/status/storage", (req, res) => {
   }
 });
 
+// Security status endpoint (shows nonce info)
+app.get("/status/security", (req, res) => {
+  res.json({
+    success: true,
+    message: "Security status information",
+    data: {
+      csp: {
+        type: 'nonce-based',
+        currentNonce: res.locals.nonce,
+        nonceLength: res.locals.nonce ? res.locals.nonce.length : 0
+      },
+      https: {
+        forced: process.env.NODE_ENV === 'production',
+        current: req.secure || req.get('x-forwarded-proto') === 'https'
+      },
+      headers: {
+        'x-forwarded-proto': req.get('x-forwarded-proto'),
+        'host': req.get('host'),
+        'user-agent': req.get('user-agent') ? 'present' : 'missing'
+      },
+      environment: process.env.NODE_ENV || 'development'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Railway health endpoint (Railway expects this)
 app.get("/healthz", (req, res) => {
   res.status(200).json({ 
     status: "healthy",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    memory: process.memoryUsage()
+    memory: process.memoryUsage(),
+    security: {
+      csp: 'nonce-enabled',
+      nonce: res.locals.nonce ? 'generated' : 'missing'
+    }
   });
 });
 
@@ -330,7 +378,8 @@ app.use("*", (req, res) => {
       auth: "/api/auth/*",
       predict: "/api/predict",
       route_status: "/status/routes",
-      storage_status: "/status/storage"
+      storage_status: "/status/storage",
+      security_status: "/status/security"
     }
   });
 });
@@ -381,11 +430,13 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📦 Platform: Railway`);
+  console.log(`🛡️ Security: CSP with nonce-based inline script protection`);
   console.log('🚀 ================================');
   console.log(`📚 API Documentation: http://localhost:${PORT}/api/docs`);
   console.log(`🔍 Health Check: http://localhost:${PORT}/health`);
   console.log(`📋 Route Status: http://localhost:${PORT}/status/routes`);
   console.log(`💾 Storage Status: http://localhost:${PORT}/status/storage`);
+  console.log(`🛡️ Security Status: http://localhost:${PORT}/status/security`);
   console.log(`🛠️ Troubleshoot: http://localhost:${PORT}/troubleshoot`);
   console.log(`📊 Swagger JSON: http://localhost:${PORT}/api/docs/swagger.json`);
   console.log('🚀 ================================');
@@ -416,6 +467,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
       console.log('🚂 Railway Deployment Info:');
       console.log(`🌐 Public URL: https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'your-app.up.railway.app'}`);
       console.log(`📝 Environment Variables: ${Object.keys(process.env).filter(key => !key.includes('PASSWORD') && !key.includes('SECRET')).length} loaded`);
+      console.log(`🛡️ CSP Nonces: Dynamically generated for each request`);
       console.log('🚀 ================================');
     }
   }, 3000);
