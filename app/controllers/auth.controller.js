@@ -21,8 +21,8 @@ const getDefaultRole = async () => {
 
     // Coba cari role 'user' dengan timeout
     let userRole = await Role.findOne({ name: "user" })
-      .maxTimeMS(5000) // 5 second timeout
-      .lean(); // Lebih cepat karena tidak perlu full mongoose document
+      .maxTimeMS(5000)
+      .lean();
 
     // Jika tidak ada, buat role baru
     if (!userRole) {
@@ -97,6 +97,30 @@ const checkDuplicateUser = async (username, email) => {
   }
 };
 
+// FIXED: Async password hashing function
+const hashPassword = async (password) => {
+  try {
+    const saltRounds = 12; // Increased from 8 to 12 for better security
+    const salt = await bcrypt.genSalt(saltRounds);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    return hashedPassword;
+  } catch (error) {
+    console.error("❌ Password hashing error:", error.message);
+    throw new Error("Failed to hash password");
+  }
+};
+
+// FIXED: Async password verification function
+const verifyPassword = async (plainPassword, hashedPassword) => {
+  try {
+    const isValid = await bcrypt.compare(plainPassword, hashedPassword);
+    return isValid;
+  } catch (error) {
+    console.error("❌ Password verification error:", error.message);
+    throw new Error("Failed to verify password");
+  }
+};
+
 exports.signup = async (req, res) => {
   try {
     console.log("🚀 Signup request received for:", req.body.username);
@@ -123,15 +147,16 @@ exports.signup = async (req, res) => {
     const defaultRole = await getDefaultRole();
     console.log("✅ Default role obtained:", defaultRole.name);
 
-    // 4. Hash password
+    // 4. FIXED: Hash password dengan async/await
     console.log("🔒 Hashing password...");
-    const hashedPassword = bcrypt.hashSync(password, 8);
+    const hashedPassword = await hashPassword(password);
+    console.log("✅ Password hashed successfully");
 
     // 5. Create user object
     const newUser = new User({
       username: username.trim(),
       email: email.trim().toLowerCase(),
-      password: hashedPassword,
+      password: hashedPassword, // FIXED: Menggunakan hashed password
       roles: [defaultRole._id],
       profile: {
         firstName: firstName ? firstName.trim() : '',
@@ -217,6 +242,9 @@ exports.signup = async (req, res) => {
     } else if (err.message.includes("Failed to initialize user role")) {
       statusCode = 503;
       errorMessage = "Service temporarily unavailable. Please try again.";
+    } else if (err.message.includes("Failed to hash password")) {
+      statusCode = 500;
+      errorMessage = "Password processing failed. Please try again.";
     }
 
     res.status(statusCode).json({ 
@@ -240,34 +268,38 @@ exports.signin = async (req, res) => {
     }
 
     // Find user dengan timeout dan populate roles
+    console.log("🔍 Finding user in database...");
     const user = await User.findOne({
       username: req.body.username.trim()
     })
     .populate("roles", "-__v")
-    .maxTimeMS(5000); // 5 second timeout
+    .maxTimeMS(5000);
 
     if (!user) {
+      console.log("❌ User not found:", req.body.username);
       return res.status(404).json({ 
         success: false,
         message: "User not found." 
       });
     }
 
+    console.log("✅ User found:", user.username);
+
     // Check if user is active
     if (user.status !== 'active') {
+      console.log("❌ User account is not active:", user.username);
       return res.status(403).json({ 
         success: false,
         message: "Account is deactivated. Contact administrator." 
       });
     }
 
-    // Verify password
-    const passwordIsValid = bcrypt.compareSync(
-      req.body.password,
-      user.password
-    );
+    // FIXED: Verify password dengan async/await
+    console.log("🔑 Verifying password...");
+    const passwordIsValid = await verifyPassword(req.body.password, user.password);
 
     if (!passwordIsValid) {
+      console.log("❌ Invalid password for user:", user.username);
       return res.status(401).json({
         success: false,
         accessToken: null,
@@ -275,7 +307,10 @@ exports.signin = async (req, res) => {
       });
     }
 
+    console.log("✅ Password verified successfully");
+
     // Generate JWT token
+    console.log("🎫 Generating JWT token...");
     const token = jwt.sign({ id: user.id }, config.secret, {
       expiresIn: 86400 // 24 hours
     });
@@ -294,12 +329,13 @@ exports.signin = async (req, res) => {
           setTimeout(() => reject(new Error('Save timeout')), 5000)
         )
       ]);
+      console.log("✅ Last login updated");
     } catch (updateError) {
       console.warn("⚠️ Failed to update last login:", updateError.message);
       // Continue with login - don't fail for this
     }
 
-    console.log("✅ Signin successful for:", user.username);
+    console.log("🎉 Signin successful for:", user.username);
 
     res.status(200).json({
       success: true,
@@ -321,6 +357,9 @@ exports.signin = async (req, res) => {
     if (err.message.includes("timeout") || err.message.includes("buffering")) {
       statusCode = 503;
       errorMessage = "Database connection timeout. Please try again.";
+    } else if (err.message.includes("Failed to verify password")) {
+      statusCode = 500;
+      errorMessage = "Password verification failed. Please try again.";
     }
 
     res.status(statusCode).json({ 
@@ -544,8 +583,11 @@ exports.resetPassword = async (req, res) => {
           });
         }
 
+        // FIXED: Hash new password with async function
+        const hashedNewPassword = await hashPassword(newPassword);
+
         // Update password
-        user.password = bcrypt.hashSync(newPassword, 8);
+        user.password = hashedNewPassword;
         user.resetPasswordToken = undefined;
         user.resetPasswordExpires = undefined;
 
@@ -605,8 +647,8 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    // Verify current password
-    const passwordIsValid = bcrypt.compareSync(currentPassword, user.password);
+    // FIXED: Verify current password with async function
+    const passwordIsValid = await verifyPassword(currentPassword, user.password);
     if (!passwordIsValid) {
       return res.status(401).json({ 
         success: false,
@@ -614,8 +656,11 @@ exports.changePassword = async (req, res) => {
       });
     }
 
+    // FIXED: Hash new password with async function
+    const hashedNewPassword = await hashPassword(newPassword);
+
     // Update password
-    user.password = bcrypt.hashSync(newPassword, 8);
+    user.password = hashedNewPassword;
     
     await Promise.race([
       user.save(),

@@ -1,4 +1,4 @@
-// app/models/user.model.js
+// app/models/user.model.js - FIXED VERSION
 const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
@@ -158,14 +158,9 @@ UserSchema.methods.resetLoginAttempts = function() {
   });
 };
 
-// Pre-save middleware untuk hash password jika berubah
-UserSchema.pre('save', function(next) {
-  if (this.isModified('password')) {
-    const bcrypt = require('bcryptjs');
-    this.password = bcrypt.hashSync(this.password, 8);
-  }
-  next();
-});
+// REMOVED: Pre-save middleware that was causing conflicts
+// Password hashing is now handled explicitly in the controller
+// This prevents double-hashing and ensures we have control over when hashing occurs
 
 // Transform output (hide sensitive data)
 UserSchema.methods.toJSON = function() {
