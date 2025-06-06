@@ -12,7 +12,7 @@ class DatabaseConfig {
       
       serverSelectionTimeoutMS: 8000,   // Reduced from 5000
       socketTimeoutMS: 20000,           // Reduced from 45000
-      connectTimeoutMS: 8000,           // Added
+      connectTimeoutMS: 10000,           // Added
       
       maxPoolSize: 5,                   // Reduced from 10 for Vercel
       minPoolSize: 1,                   // Added minimum
@@ -195,8 +195,8 @@ class DatabaseConfig {
 
       // Quick check - don't proceed if data exists
       const [roleCount, userCount] = await Promise.all([
-        Role.countDocuments().maxTimeMS(5000),
-        User.countDocuments().maxTimeMS(5000)
+        Role.countDocuments().maxTimeMS(10000),
+        User.countDocuments().maxTimeMS(10000)
       ]);
 
       if (roleCount > 0 && userCount > 0) {
@@ -211,7 +211,7 @@ class DatabaseConfig {
       const createdRoles = {};
 
       for (let roleName of roles) {
-        let role = await Role.findOne({ name: roleName }).maxTimeMS(5000);
+        let role = await Role.findOne({ name: roleName }).maxTimeMS(10000);
         if (!role) {
           role = await new Role({ name: roleName }).save();
         }
@@ -225,7 +225,7 @@ class DatabaseConfig {
       
       const existingAdmin = await User.findOne({
         $or: [{ username: adminUsername }, { email: adminEmail }]
-      }).maxTimeMS(5000);
+      }).maxTimeMS(10000);
 
       if (!existingAdmin) {
         const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
@@ -286,9 +286,9 @@ class DatabaseConfig {
         const Prediction = require("../models/prediction.model");
         
         const collectionTests = await Promise.allSettled([
-          Role.countDocuments().maxTimeMS(3000),
-          User.countDocuments().maxTimeMS(3000),
-          Prediction.countDocuments().maxTimeMS(3000)
+          Role.countDocuments().maxTimeMS(13000),
+          User.countDocuments().maxTimeMS(13000),
+          Prediction.countDocuments().maxTimeMS(13000)
         ]);
 
         healthStatus.collections.roles = collectionTests[0].status === 'fulfilled' ? collectionTests[0].value : 'timeout';
