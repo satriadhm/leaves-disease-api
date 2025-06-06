@@ -49,15 +49,15 @@ class DatabaseConfig {
       }
 
       // Validate environment variables
-      if (!process.env.DB_URI) {
-        throw new Error("DB_URI environment variable is required");
+      if (!process.env.MONGODB_URI) {
+        throw new Error("MONGODB_URI environment variable is required");
       }
 
       console.log('🔄 Attempting to connect to MongoDB...');
       console.log('📍 Environment:', process.env.NODE_ENV);
       
       // Mask sensitive parts of connection string for logging
-      const maskedUri = process.env.DB_URI.replace(/\/\/.*@/, '//***:***@');
+      const maskedUri = process.env.MONGODB_URI.replace(/\/\/.*@/, '//***:***@');
       console.log('🔗 Connection URI (masked):', maskedUri);
 
       // Set mongoose options globally to prevent buffering - MOVED HERE
@@ -124,7 +124,7 @@ class DatabaseConfig {
         this.connectionAttempts++;
         console.log(`🔄 Connection attempt ${this.connectionAttempts}/${this.maxRetries}`);
         
-        await mongoose.connect(process.env.DB_URI, this.connectionOptions);
+        await mongoose.connect(process.env.MONGODB_URI, this.connectionOptions);
         console.log(`✅ Connection successful on attempt ${this.connectionAttempts}`);
         return;
         
@@ -292,8 +292,8 @@ class DatabaseConfig {
         collections: {},
         environment: {
           NODE_ENV: process.env.NODE_ENV,
-          hasDbUri: !!process.env.DB_URI,
-          dbHost: process.env.DB_URI?.split('@')[1]?.split('/')[0] || 'not set'
+          hasDbUri: !!process.env.MONGODB_URI,
+          dbHost: process.env.MONGODB_URI?.split('@')[1]?.split('/')[0] || 'not set'
         },
         performance: {
           bufferCommands: mongoose.get('bufferCommands'),

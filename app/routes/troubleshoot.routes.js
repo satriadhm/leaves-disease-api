@@ -310,7 +310,7 @@ function generateTroubleshootHTML(baseUrl) {
                     <li><strong>IP Whitelist:</strong> Ensure 0.0.0.0/0 is added in Network Access</li>
                     <li><strong>Connection Timeout:</strong> Verify cluster is running and not paused</li>
                     <li><strong>Invalid Connection String:</strong> Use mongodb+srv:// format for Atlas</li>
-                    <li><strong>Missing Environment Variables:</strong> Set DB_URI in Vercel environment variables</li>
+                    <li><strong>Missing Environment Variables:</strong> Set MONGODB_URI in Vercel environment variables</li>
                 </ul>
             </div>
             

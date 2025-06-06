@@ -60,11 +60,11 @@ class TroubleshootController {
     try {
       const startTime = Date.now();
       
-      if (!process.env.DB_URI) {
+      if (!process.env.MONGODB_URI) {
         return res.status(400).json({
           success: false,
-          message: 'DB_URI environment variable not found',
-          recommendations: ['Set DB_URI in Vercel environment variables']
+          message: 'MONGODB_URI environment variable not found',
+          recommendations: ['Set MONGODB_URI in Vercel environment variables']
         });
       }
 
@@ -96,7 +96,7 @@ class TroubleshootController {
       }
 
       // Test new connection
-      await mongoose.connect(process.env.DB_URI, testOptions);
+      await mongoose.connect(process.env.MONGODB_URI, testOptions);
       const connectionTime = Date.now() - startTime;
       
       const result = {
@@ -139,7 +139,7 @@ class TroubleshootController {
       issues: []
     };
 
-    const requiredVars = ['DB_URI', 'JWT_SECRET'];
+    const requiredVars = ['MONGODB_URI', 'JWT_SECRET'];
     const optionalVars = ['ADMIN_USERNAME', 'ADMIN_EMAIL', 'ADMIN_PASSWORD', 'BLOB_READ_WRITE_TOKEN'];
 
     // Check required variables
@@ -189,10 +189,10 @@ class TroubleshootController {
       masked: 'Not provided'
     };
 
-    const dbUri = process.env.DB_URI;
+    const dbUri = process.env.MONGODB_URI;
     if (!dbUri) {
       analysis.status = 'error';
-      analysis.issues.push('DB_URI not found');
+      analysis.issues.push('MONGODB_URI not found');
       return analysis;
     }
 

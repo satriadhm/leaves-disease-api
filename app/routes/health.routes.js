@@ -111,7 +111,7 @@ module.exports = function(app) {
         environment: {
           NODE_ENV: process.env.NODE_ENV,
           PORT: process.env.PORT,
-          hasDbUri: !!process.env.DB_URI,
+          hasDbUri: !!process.env.MONGODB_URI,
           hasJwtSecret: !!process.env.JWT_SECRET,
           hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN
         },

@@ -32,19 +32,19 @@ class MongoDBTroubleshooter {
   async checkEnvironmentVariables() {
     this.log('\n🔧 Step 1: Checking Environment Variables...', 'cyan');
     
-    const dbUri = process.env.DB_URI;
+    const dbUri = process.env.MONGODB_URI;
     
     if (!dbUri) {
-      this.log('❌ DB_URI environment variable not found!', 'red');
-      this.results.recommendations.push('Set DB_URI environment variable');
+      this.log('❌ MONGODB_URI environment variable not found!', 'red');
+      this.results.recommendations.push('Set MONGODB_URI environment variable');
       return false;
     }
     
-    this.log('✅ DB_URI environment variable found', 'green');
+    this.log('✅ MONGODB_URI environment variable found', 'green');
     
     // Mask the URI for display
     const maskedUri = dbUri.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@');
-    this.log(`📍 DB_URI (masked): ${maskedUri}`, 'blue');
+    this.log(`📍 MONGODB_URI (masked): ${maskedUri}`, 'blue');
     
     this.results.environment.hasDbUri = true;
     this.results.environment.maskedUri = maskedUri;
@@ -55,7 +55,7 @@ class MongoDBTroubleshooter {
   analyzeConnectionString() {
     this.log('\n🔍 Step 2: Analyzing Connection String Format...', 'cyan');
     
-    const dbUri = process.env.DB_URI;
+    const dbUri = process.env.MONGODB_URI;
     const analysis = {
       valid: true,
       issues: [],
@@ -135,7 +135,7 @@ class MongoDBTroubleshooter {
       this.log('🔄 Attempting connection...', 'blue');
       const startTime = Date.now();
       
-      await mongoose.connect(process.env.DB_URI, testOptions);
+      await mongoose.connect(process.env.MONGODB_URI, testOptions);
       
       const connectionTime = Date.now() - startTime;
       this.log(`✅ Connection successful in ${connectionTime}ms`, 'green');
@@ -255,7 +255,7 @@ class MongoDBTroubleshooter {
   async checkDatabaseUser() {
     this.log('\n👤 Step 5: Database User Check...', 'cyan');
     
-    const connectionString = process.env.DB_URI;
+    const connectionString = process.env.MONGODB_URI;
     if (!connectionString) return;
 
     try {
@@ -298,7 +298,7 @@ class MongoDBTroubleshooter {
     this.log('\n🔧 Environment Variables Test...', 'cyan');
     
     const envVars = [
-      'DB_URI',
+      'MONGODB_URI',
       'JWT_SECRET', 
       'NODE_ENV',
       'ADMIN_USERNAME',
@@ -316,8 +316,8 @@ class MongoDBTroubleshooter {
         }
       } else {
         this.log(`❌ ${varName}: Not set`, 'red');
-        if (varName === 'DB_URI') {
-          this.results.recommendations.push('DB_URI environment variable is required');
+        if (varName === 'MONGODB_URI') {
+          this.results.recommendations.push('MONGODB_URI environment variable is required');
         }
       }
     });
@@ -345,7 +345,7 @@ class MongoDBTroubleshooter {
     if (this.results.environment.hasDbUri) {
       this.log('\n✅ Environment Variables: OK', 'green');
     } else {
-      this.log('\n❌ Environment Variables: MISSING DB_URI', 'red');
+      this.log('\n❌ Environment Variables: MISSING MONGODB_URI', 'red');
     }
 
     // Connection string summary
@@ -390,7 +390,7 @@ class MongoDBTroubleshooter {
     allPassed = hasEnv && allPassed;
 
     if (!hasEnv) {
-      this.log('\n❌ Cannot proceed without DB_URI environment variable', 'red');
+      this.log('\n❌ Cannot proceed without MONGODB_URI environment variable', 'red');
       await this.generateReport();
       return false;
     }
@@ -425,8 +425,8 @@ class MongoDBTroubleshooter {
 async function quickConnectionTest() {
   console.log('⚡ Quick Connection Test...\n');
   
-  if (!process.env.DB_URI) {
-    console.log('❌ DB_URI environment variable not found');
+  if (!process.env.MONGODB_URI) {
+    console.log('❌ MONGODB_URI environment variable not found');
     console.log('💡 Create .env file with your MongoDB connection string');
     return;
   }
@@ -434,7 +434,7 @@ async function quickConnectionTest() {
   try {
     console.log('🔄 Testing connection...');
     
-    await mongoose.connect(process.env.DB_URI, {
+    await mongoose.connect(process.env.MONGODB_URI, {
       serverSelectionTimeoutMS: 8000
     });
     

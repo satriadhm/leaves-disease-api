@@ -10,7 +10,7 @@ require("dotenv").config();
 const seedDatabase = async () => {
   try {
     // Use the same database configuration as the main app
-    const dbUri = process.env.DB_URI || "mongodb://127.0.0.1:27017/leaves-disease";
+    const dbUri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/leaves-disease";
     
     console.log("Connecting to database:", dbUri);
     

@@ -33,7 +33,7 @@ cp .env.example .env
 
 Edit `.env` file:
 ```env
-DB_URI=mongodb+srv://username:password@cluster.mongodb.net/plant_disease_api
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/plant_disease_api
 JWT_SECRET=your-super-secret-key
 CLIENT_ORIGIN=http://localhost:3000
 ```
@@ -59,7 +59,7 @@ API akan berjalan di: `http://localhost:8000`
 Set variabel berikut di Vercel dashboard:
 
 ```env
-DB_URI=mongodb+srv://username:password@cluster.mongodb.net/plant_disease_api
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/plant_disease_api
 JWT_SECRET=your-super-secret-jwt-key
 ADMIN_USERNAME=admin
 ADMIN_EMAIL=admin@yourcompany.com
@@ -207,7 +207,7 @@ Jika ada error CORS saat development:
 
 ### Database Connection
 1. Pastikan MongoDB Atlas cluster sudah running
-2. Check connection string di `DB_URI`
+2. Check connection string di `MONGODB_URI`
 3. Whitelist IP address di MongoDB Atlas
 
 ## 📄 License

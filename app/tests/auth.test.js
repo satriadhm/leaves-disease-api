@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 
 // Import app setelah setup test environment
 process.env.NODE_ENV = "test";
-process.env.DB_URI = "mongodb://127.0.0.1:27017/auth_service_test";
+process.env.MONGODB_URI = "mongodb://127.0.0.1:27017/auth_service_test";
 
 const app = require("../../server");
 
