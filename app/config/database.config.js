@@ -5,7 +5,7 @@ class DatabaseConfig {
   constructor() {
     this.isConnected = false;
     this.connectionAttempts = 0;
-    this.maxRetries = 3;
+    this.maxRetries = 1;
     
     // Mongoose 7+ compatible connection options
     this.connectionOptions = {
@@ -341,7 +341,7 @@ class DatabaseConfig {
     try {
       const healthStatus = {
         connection: {
-          state: mongoose.connection.readyState,
+          state: mongoose.connection.readyState,  
           stateText: this.getReadyStateText(),
           name: mongoose.connection.db?.databaseName,
           host: mongoose.connection.host,
