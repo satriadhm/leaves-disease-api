@@ -83,7 +83,13 @@ try {
 
 console.log('📋 Route loading completed');
 
-// Default route
+try {
+  require("./app/routes/troubleshoot.routes")(app);
+  console.log('✅ Troubleshoot routes loaded');
+} catch (error) {
+  console.error('❌ Failed to load troubleshoot routes:', error.message);
+}
+
 app.get("/", (req, res) => {
   res.json({
     message: "🌱 Plant Disease Prediction API is running!",
@@ -98,7 +104,8 @@ app.get("/", (req, res) => {
       prediction: "/api/predict",
       history: "/api/predictions/history",
       docs: "/api/docs",
-      health: "/health"
+      health: "/health",
+      troubleshoot: "/troubleshoot"  // Add this line
     },
     documentation: {
       swagger_ui: "/api/docs",
@@ -109,6 +116,12 @@ app.get("/", (req, res) => {
       database: "/health/database",
       system: "/health/system",
       endpoints: "/health/endpoints"
+    },
+    troubleshooting: {  // Add this section
+      web_interface: "/troubleshoot",
+      quick_test: "/api/troubleshoot/connection",
+      full_diagnostics: "/api/troubleshoot/full",
+      admin_advanced: "/api/admin/troubleshoot/advanced"
     }
   });
 });
