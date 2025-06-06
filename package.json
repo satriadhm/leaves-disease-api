@@ -1,7 +1,7 @@
 {
   "name": "plant-disease-prediction-api",
   "version": "2.0.0",
-  "description": "API untuk prediksi penyakit tanaman menggunakan AI",
+  "description": "API untuk prediksi penyakit tanaman menggunakan AI dengan local storage",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,16 +13,19 @@
     "seed:force": "node app/seeds/seed-force.js",
     "test:swagger": "node -e \"const axios = require('axios'); (async () => { try { const res = await axios.get('http://localhost:8000/api/docs/swagger.json'); console.log('✅ Swagger JSON OK:', res.data.info.title); } catch(e) { console.log('❌ Swagger failed:', e.message); } })()\"",
     "test:health": "curl -s http://localhost:8000/health | jq .",
-    "test:vercel": "curl -s https://leaves-disease-api.vercel.app/health | jq .",
-    "test:vercel-swagger": "curl -s https://leaves-disease-api.vercel.app/api/docs/swagger.json | jq .info",
+    "test:railway": "curl -s https://your-app.railway.app/health | jq .",
+    "test:railway-swagger": "curl -s https://your-app.railway.app/api/docs/swagger.json | jq .info",
+    "test:storage": "curl -s http://localhost:8000/status/storage | jq .",
     "debug": "DEBUG=express:* node server.js",
+    "railway:start": "node server.js",
     "build": "echo 'No build step required'",
-    "vercel-build": "echo 'Vercel build completed'"
+    "cleanup": "node -e \"const { cleanOldFiles } = require('./app/middleware/upload'); console.log('Cleaned', cleanOldFiles(1), 'files older than 1 hour');\"",
+    "model:verify": "node scripts/verify-model.js",
+    "db:troubleshoot": "node scripts/mongodb-troubleshoot.js"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.15.0",
     "@tensorflow/tfjs-backend-cpu": "^4.15.0",
-    "@vercel/blob": "^0.19.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -52,8 +55,19 @@
     "tensorflow",
     "api",
     "ai",
-    "prediction"
+    "prediction",
+    "railway",
+    "local-storage",
+    "multer"
   ],
   "author": "G. Satria",
-  "license": "ISC"
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/satriadhm/plant-disease-prediction-api.git"
+  },
+  "bugs": {
+    "url": "https://github.com/satriadhm/plant-disease-prediction-api/issues"
+  },
+  "homepage": "https://github.com/satriadhm/plant-disease-prediction-api#readme"
 }

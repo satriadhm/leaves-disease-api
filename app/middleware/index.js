@@ -1,13 +1,24 @@
-// app/middleware/index.js
+// app/middleware/index.js - Updated for local storage
 const authJwt = require("./authJwt");
 const verifySignUp = require("./verifySignUp");
 const { optionalAuth } = require("./optionalAuth");
-const { uploadSingle, handleUploadErrors } = require("./upload");
+const { 
+  uploadSingle, 
+  handleUploadErrors, 
+  deleteUploadedFile,
+  cleanOldFiles,
+  startPeriodicCleanup,
+  uploadsDir 
+} = require("./upload");
 
 module.exports = {
     authJwt,
     verifySignUp,
     optionalAuth,
     uploadSingle,
-    handleUploadErrors
+    handleUploadErrors,
+    deleteUploadedFile,
+    cleanOldFiles,
+    startPeriodicCleanup,
+    uploadsDir
 };

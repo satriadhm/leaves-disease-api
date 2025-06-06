@@ -1,12 +1,12 @@
-// app/controllers/prediction.controller.js - Updated with Vercel Blob integration
+// app/controllers/prediction.controller.js - Updated for local storage
 const tf = require('@tensorflow/tfjs');
 require('@tensorflow/tfjs-backend-cpu');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { del } = require('@vercel/blob');
 const db = require("../models");
 const Prediction = db.prediction;
+const { deleteUploadedFile } = require('../middleware/upload');
 
 // Load model dan labels saat server start
 let model = null;
@@ -19,26 +19,26 @@ const LABELS_PATH = path.join(__dirname, '../../models/labels.txt');
 const initializeModel = async () => {
   try {
     await tf.setBackend('cpu');
-    console.log('TensorFlow.js backend set to CPU');
+    console.log('🧠 TensorFlow.js backend set to CPU');
     
     if (fs.existsSync(MODEL_PATH)) {
       try {
-        console.log('Loading model from:', MODEL_PATH);
+        console.log('📥 Loading model from:', MODEL_PATH);
         
         try {
           const modelUrl = `file://${MODEL_PATH.replace(/\\/g, '/')}`;
-          console.log('Attempting to load graph model from:', modelUrl);
+          console.log('🔄 Attempting to load graph model from:', modelUrl);
           model = await tf.loadGraphModel(modelUrl);
           console.log('✅ Graph model loaded successfully via URL');
         } catch (urlError) {
-          console.log('URL loading failed, trying custom IO handler...');
+          console.log('⚠️  URL loading failed, trying custom IO handler...');
           
           const modelData = JSON.parse(fs.readFileSync(MODEL_PATH, 'utf8'));
-          console.log('Model JSON loaded successfully');
+          console.log('📄 Model JSON loaded successfully');
           
           const ioHandler = {
             load: async () => {
-              console.log('Loading model weights...');
+              console.log('⬇️  Loading model weights...');
               
               const modelTopology = modelData.modelTopology;
               const weightsManifest = modelData.weightsManifest;
@@ -50,7 +50,7 @@ const initializeModel = async () => {
                 for (const weightPath of manifest.paths) {
                   const weightFilePath = path.join(modelDir, weightPath);
                   if (fs.existsSync(weightFilePath)) {
-                    console.log(`Reading weight file: ${weightPath}`);
+                    console.log(`📦 Reading weight file: ${weightPath}`);
                     const buffer = fs.readFileSync(weightFilePath);
                     weightData.push(buffer);
                   } else {
@@ -68,7 +68,7 @@ const initializeModel = async () => {
                 offset += buffer.length;
               }
               
-              console.log(`Total weight data size: ${totalLength} bytes`);
+              console.log(`📊 Total weight data size: ${(totalLength / 1024 / 1024).toFixed(2)} MB`);
               
               return {
                 modelTopology: modelTopology,
@@ -86,19 +86,19 @@ const initializeModel = async () => {
           console.log('✅ Graph model loaded successfully via custom IO handler');
         }
         
-        console.log('Model input shape:', model.inputs[0].shape);
-        console.log('Graph model loaded - output shape will be determined during inference');
+        console.log('📐 Model input shape:', model.inputs[0].shape);
+        console.log('🎯 Graph model loaded - output shape will be determined during inference');
         
-        console.log('Warming up model...');
+        console.log('🔥 Warming up model...');
         const dummyInput = tf.zeros([1, 224, 224, 3]);
         const warmupPrediction = model.execute(dummyInput);
         
         if (Array.isArray(warmupPrediction)) {
-          console.log('Model has multiple outputs, using first output');
-          console.log('Output shape:', warmupPrediction[0].shape);
+          console.log('🔢 Model has multiple outputs, using first output');
+          console.log('📐 Output shape:', warmupPrediction[0].shape);
           warmupPrediction.forEach(p => p.dispose());
         } else {
-          console.log('Output shape:', warmupPrediction.shape);
+          console.log('📐 Output shape:', warmupPrediction.shape);
           warmupPrediction.dispose();
         }
         
@@ -107,13 +107,13 @@ const initializeModel = async () => {
         
       } catch (modelError) {
         console.error('❌ Failed to load model:', modelError.message);
-        console.error('Full error:', modelError);
-        console.log('⚠️ Continuing with dummy predictions');
+        console.error('📋 Full error:', modelError);
+        console.log('⚠️  Continuing with dummy predictions');
         model = null;
       }
     } else {
-      console.log('⚠️ Model file not found at:', MODEL_PATH);
-      console.log('⚠️ Using dummy predictions');
+      console.log('⚠️  Model file not found at:', MODEL_PATH);
+      console.log('🤖 Using dummy predictions');
     }
 
     // Load class labels
@@ -124,9 +124,9 @@ const initializeModel = async () => {
       
       if (classNames.length > 0) {
         const displayClasses = classNames.slice(0, 5);
-        console.log('Classes:', displayClasses.join(', '));
+        console.log('🏷️  Classes:', displayClasses.join(', '));
         if (classNames.length > 5) {
-          console.log(`... and ${classNames.length - 5} more classes`);
+          console.log(`   ... and ${classNames.length - 5} more classes`);
         }
       }
     } else {
@@ -136,8 +136,8 @@ const initializeModel = async () => {
         'Rice__brown_spot', 'Rice__healthy', 'Rice__leaf_blast', 'Rice__neck_blast',
         'Tomato__early_blight', 'Tomato__healthy', 'Tomato__late_blight', 'Tomato__yellow_leaf_curl_virus'
       ];
-      console.log('⚠️ Labels file not found, using default labels');
-      console.log(`✅ Using ${classNames.length} default class labels`);
+      console.log('⚠️  Labels file not found, using default labels');
+      console.log(`🏷️  Using ${classNames.length} default class labels`);
     }
   } catch (error) {
     console.error('❌ Error initializing model:', error);
@@ -148,9 +148,11 @@ const initializeModel = async () => {
 // Call initialization
 initializeModel();
 
-// Preprocessing image dari file path (legacy)
+// Preprocessing image dari file path
 const preprocessImage = async (imagePath) => {
   try {
+    console.log('🖼️  Preprocessing image:', imagePath);
+    
     const imageBuffer = await sharp(imagePath)
       .resize(224, 224)
       .removeAlpha()
@@ -167,15 +169,19 @@ const preprocessImage = async (imagePath) => {
     const normalizedImage = imageTensor.cast('float32').div(255.0).expandDims(0);
     imageTensor.dispose();
     
+    console.log('✅ Image preprocessing complete');
     return normalizedImage;
   } catch (error) {
+    console.error('❌ Image preprocessing error:', error.message);
     throw new Error(`Image preprocessing error: ${error.message}`);
   }
 };
 
-// Preprocessing image dari buffer (untuk Vercel Blob)
+// Preprocessing image dari buffer
 const preprocessImageFromBuffer = async (imageBuffer) => {
   try {
+    console.log('🖼️  Preprocessing image from buffer');
+    
     const processedBuffer = await sharp(imageBuffer)
       .resize(224, 224)
       .removeAlpha()
@@ -192,14 +198,18 @@ const preprocessImageFromBuffer = async (imageBuffer) => {
     const normalizedImage = imageTensor.cast('float32').div(255.0).expandDims(0);
     imageTensor.dispose();
     
+    console.log('✅ Image preprocessing from buffer complete');
     return normalizedImage;
   } catch (error) {
+    console.error('❌ Image preprocessing error:', error.message);
     throw new Error(`Image preprocessing error: ${error.message}`);
   }
 };
 
 // Dummy prediction function
 const getDummyPrediction = () => {
+  console.log('🎭 Generating dummy prediction');
+  
   const predictions = classNames.map((className, index) => ({
     class: className,
     confidence: Math.random() * 0.8 + 0.1
@@ -214,78 +224,38 @@ const getDummyPrediction = () => {
   };
 };
 
-// Helper function to delete blob
-const deleteBlob = async (url) => {
-  try {
-    if (url && url.includes('blob.vercel-storage.com')) {
-      await del(url, {
-        token: process.env.BLOB_READ_WRITE_TOKEN
-      });
-      console.log('Blob deleted:', url);
-    }
-  } catch (error) {
-    console.error('Error deleting blob:', error);
-  }
-};
-
-// Main prediction function (CREATE) - Updated with Vercel Blob support
+// Main prediction function (CREATE)
 exports.predictPlantDisease = async (req, res) => {
   const startTime = Date.now();
   
   try {
-    if (!req.blob && !req.file) {
+    console.log('🚀 Starting plant disease prediction...');
+    
+    if (!req.file) {
+      console.log('❌ No image file provided in request');
       return res.status(400).json({
         success: false,
-        message: 'No image file provided'
+        message: 'No image file provided',
+        error: 'NO_FILE'
       });
     }
 
-    let predictionResult;
-    let imageBuffer;
+    console.log('📁 File received:', {
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      size: req.file.size,
+      path: req.file.path,
+      storageType: req.file.storageType
+    });
 
-    // Get image buffer based on storage type
-    if (req.blob) {
-      // From Vercel Blob - fetch the image
-      console.log('Processing image from Vercel Blob:', req.blob.url);
-      try {
-        const response = await fetch(req.blob.url);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch blob: ${response.statusText}`);
-        }
-        imageBuffer = Buffer.from(await response.arrayBuffer());
-      } catch (fetchError) {
-        console.error('Error fetching blob:', fetchError);
-        // Fallback to using file buffer if available
-        if (req.file && req.file.buffer) {
-          imageBuffer = req.file.buffer;
-        } else {
-          throw new Error('Failed to get image data');
-        }
-      }
-    } else if (req.file) {
-      // From memory storage or file system
-      if (req.file.buffer) {
-        imageBuffer = req.file.buffer;
-        console.log('Processing image from memory buffer');
-      } else if (req.file.path) {
-        console.log('Processing image from file path:', req.file.path);
-        // For legacy file uploads, we'll use the path-based preprocessing
-        imageBuffer = null; // Will use path-based preprocessing
-      }
-    }
+    let predictionResult;
 
     // Run model prediction
     if (model) {
       try {
-        let imageTensor;
+        console.log('🧠 Running AI model prediction...');
         
-        if (imageBuffer) {
-          imageTensor = await preprocessImageFromBuffer(imageBuffer);
-        } else if (req.file && req.file.path) {
-          imageTensor = await preprocessImage(req.file.path);
-        } else {
-          throw new Error('No valid image source found');
-        }
+        const imageTensor = await preprocessImage(req.file.path);
         
         const predictions = model.execute(imageTensor);
         
@@ -314,30 +284,26 @@ exports.predictPlantDisease = async (req, res) => {
         };
 
         imageTensor.dispose();
+        console.log('✅ AI model prediction complete');
         
       } catch (modelError) {
-        console.error('Model prediction error:', modelError);
+        console.error('❌ Model prediction error:', modelError);
+        console.log('🎭 Falling back to dummy prediction');
         predictionResult = getDummyPrediction();
       }
     } else {
-      console.log('Using dummy prediction (model not loaded)');
+      console.log('🤖 Using dummy prediction (model not loaded)');
       predictionResult = getDummyPrediction();
     }
 
     const processingTime = Date.now() - startTime;
 
-    // Determine image info based on source
-    let imageName, imageUrl, storageType;
-    
-    if (req.blob) {
-      imageName = req.blob.originalname;
-      imageUrl = req.blob.url;
-      storageType = 'vercel-blob';
-    } else if (req.file) {
-      imageName = req.file.originalname;
-      imageUrl = req.file.path ? `/uploads/${req.file.filename}` : req.file.url || '';
-      storageType = req.file.path ? 'local' : 'memory';
-    }
+    // Prepare response data
+    const imageName = req.file.originalname;
+    const imageUrl = req.file.url; // This is /uploads/filename
+    const storageType = 'local';
+
+    console.log('💾 Saving prediction to database...');
 
     // Save prediction to database
     const predictionData = {
@@ -361,8 +327,11 @@ exports.predictPlantDisease = async (req, res) => {
     }
 
     const savedPrediction = await new Prediction(predictionData).save();
+    
+    console.log('✅ Prediction saved with ID:', savedPrediction._id);
 
-    res.status(200).json({
+    // Prepare response
+    const response = {
       success: true,
       message: 'Prediction completed successfully',
       data: {
@@ -380,23 +349,18 @@ exports.predictPlantDisease = async (req, res) => {
         modelStatus: model ? 'loaded' : 'dummy',
         storageType: storageType
       }
-    });
+    };
+
+    console.log('🎉 Prediction completed successfully in', processingTime, 'ms');
+    res.status(200).json(response);
 
   } catch (error) {
-    console.error('Prediction error:', error);
+    console.error('💥 Prediction error:', error);
     
     // Cleanup uploaded file if error occurs
     if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (cleanupError) {
-        console.error('File cleanup error:', cleanupError);
-      }
-    }
-
-    // Cleanup blob if error occurs
-    if (req.blob && req.blob.url) {
-      await deleteBlob(req.blob.url);
+      console.log('🧹 Cleaning up uploaded file due to error...');
+      deleteUploadedFile(req.file.path);
     }
 
     res.status(500).json({
@@ -462,7 +426,7 @@ exports.getPredictionHistory = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get history error:', error);
+    console.error('❌ Get history error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve prediction history',
@@ -511,7 +475,7 @@ exports.getPredictionDetail = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get prediction detail error:', error);
+    console.error('❌ Get prediction detail error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve prediction details',
@@ -520,7 +484,7 @@ exports.getPredictionDetail = async (req, res) => {
   }
 };
 
-// Delete prediction (DELETE) - Updated with Vercel Blob support
+// Delete prediction (DELETE)
 exports.deletePrediction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -551,22 +515,12 @@ exports.deletePrediction = async (req, res) => {
       });
     }
 
-    // Delete associated image based on storage type
-    if (prediction.imageUrl) {
-      if (prediction.storageType === 'vercel-blob' && prediction.imageUrl.includes('blob.vercel-storage.com')) {
-        // Delete from Vercel Blob
-        await deleteBlob(prediction.imageUrl);
-      } else if (prediction.storageType === 'local') {
-        // Delete from local filesystem
-        const imagePath = path.join(__dirname, '../../uploads', path.basename(prediction.imageUrl));
-        if (fs.existsSync(imagePath)) {
-          try {
-            fs.unlinkSync(imagePath);
-            console.log('Local image file deleted:', imagePath);
-          } catch (fileError) {
-            console.error('Error deleting local image file:', fileError);
-          }
-        }
+    // Delete associated image file
+    if (prediction.imageUrl && prediction.storageType === 'local') {
+      const imagePath = path.join(__dirname, '../../uploads', path.basename(prediction.imageUrl));
+      if (fs.existsSync(imagePath)) {
+        deleteUploadedFile(imagePath);
+        console.log('🗑️ Deleted associated image file:', imagePath);
       }
     }
 
@@ -578,7 +532,7 @@ exports.deletePrediction = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Delete prediction error:', error);
+    console.error('❌ Delete prediction error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to delete prediction',
@@ -644,7 +598,7 @@ exports.getAllPredictions = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get all predictions error:', error);
+    console.error('❌ Get all predictions error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve predictions',
@@ -653,7 +607,7 @@ exports.getAllPredictions = async (req, res) => {
   }
 };
 
-// Admin: Delete any prediction (DELETE) - Updated with Vercel Blob support
+// Admin: Delete any prediction (DELETE)
 exports.adminDeletePrediction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -673,22 +627,12 @@ exports.adminDeletePrediction = async (req, res) => {
       });
     }
 
-    // Delete associated image based on storage type
-    if (prediction.imageUrl) {
-      if (prediction.storageType === 'vercel-blob' && prediction.imageUrl.includes('blob.vercel-storage.com')) {
-        // Delete from Vercel Blob
-        await deleteBlob(prediction.imageUrl);
-      } else if (prediction.storageType === 'local') {
-        // Delete from local filesystem
-        const imagePath = path.join(__dirname, '../../uploads', path.basename(prediction.imageUrl));
-        if (fs.existsSync(imagePath)) {
-          try {
-            fs.unlinkSync(imagePath);
-            console.log('Local image file deleted:', imagePath);
-          } catch (fileError) {
-            console.error('Error deleting local image file:', fileError);
-          }
-        }
+    // Delete associated image file
+    if (prediction.imageUrl && prediction.storageType === 'local') {
+      const imagePath = path.join(__dirname, '../../uploads', path.basename(prediction.imageUrl));
+      if (fs.existsSync(imagePath)) {
+        deleteUploadedFile(imagePath);
+        console.log('🗑️ Admin deleted associated image file:', imagePath);
       }
     }
 
@@ -696,11 +640,11 @@ exports.adminDeletePrediction = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Prediction deleted successfully'
+      message: 'Prediction deleted successfully by admin'
     });
 
   } catch (error) {
-    console.error('Admin delete prediction error:', error);
+    console.error('❌ Admin delete prediction error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to delete prediction',
@@ -717,7 +661,6 @@ exports.getPredictionStats = async (req, res) => {
     const anonymousPredictions = await Prediction.countDocuments({ predictionType: 'anonymous' });
     
     // Storage type statistics
-    const blobPredictions = await Prediction.countDocuments({ storageType: 'vercel-blob' });
     const localPredictions = await Prediction.countDocuments({ storageType: 'local' });
 
     // Get predictions by class
@@ -783,7 +726,6 @@ exports.getPredictionStats = async (req, res) => {
           totalPredictions,
           authenticatedPredictions,
           anonymousPredictions,
-          blobPredictions,
           localPredictions,
           avgProcessingTime: avgProcessingTime[0]?.avgTime || 0
         },
@@ -794,13 +736,13 @@ exports.getPredictionStats = async (req, res) => {
           modelLoaded: !!model,
           totalClasses: classNames.length,
           tfBackend: tf.getBackend(),
-          storageTypes: ['vercel-blob', 'local', 'memory']
+          storageTypes: ['local']
         }
       }
     });
 
   } catch (error) {
-    console.error('Get stats error:', error);
+    console.error('❌ Get stats error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve prediction statistics',
@@ -823,8 +765,8 @@ exports.getModelHealth = async (req, res) => {
       labelsExists: fs.existsSync(LABELS_PATH),
       modelType: model ? 'GraphModel' : 'Not loaded',
       storageConfig: {
-        vercelBlob: !!process.env.BLOB_READ_WRITE_TOKEN,
-        localStorage: fs.existsSync(path.join(__dirname, '../../uploads'))
+        localStorage: fs.existsSync(path.join(__dirname, '../../uploads')),
+        uploadsDirectory: path.join(__dirname, '../../uploads')
       }
     };
     

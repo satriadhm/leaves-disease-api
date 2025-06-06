@@ -1,17 +1,48 @@
+// app/middleware/upload.js - Updated for local storage
 const multer = require('multer');
-const { put } = require('@vercel/blob');
+const path = require('path');
+const fs = require('fs');
 
-// Memory storage untuk Vercel Blob
-const storage = multer.memoryStorage();
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('📁 Created uploads directory at:', uploadsDir);
+}
 
-// File filter
+// Disk storage configuration
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadsDir);
+  },
+  filename: function (req, file, cb) {
+    // Generate unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname).toLowerCase();
+    const filename = 'plant-' + uniqueSuffix + extension;
+    cb(null, filename);
+  }
+});
+
+// File filter function
 const fileFilter = (req, file, cb) => {
+  console.log('📎 File received:', {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size
+  });
+
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
   
-  if (allowedTypes.includes(file.mimetype)) {
+  const fileExtension = path.extname(file.originalname).toLowerCase();
+  
+  if (allowedTypes.includes(file.mimetype) && allowedExtensions.includes(fileExtension)) {
+    console.log('✅ File type accepted');
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only JPEG, PNG, and WebP images are allowed.'), false);
+    console.log('❌ File type rejected:', file.mimetype, fileExtension);
+    cb(new Error(`Invalid file type. Only JPEG, PNG, and WebP images are allowed. Received: ${file.mimetype}`), false);
   }
 };
 
@@ -25,63 +56,57 @@ const upload = multer({
   }
 });
 
-// Middleware untuk upload ke Vercel Blob
-const uploadToBlob = async (req, res, next) => {
-  try {
-    if (!req.file) {
-      return next();
-    }
-
-    // Generate unique filename
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const extension = req.file.originalname.split('.').pop().toLowerCase();
-    const filename = `plant-${uniqueSuffix}.${extension}`;
-
-    // Upload to Vercel Blob
-    const blob = await put(filename, req.file.buffer, {
-      access: 'public',
-      token: process.env.BLOB_READ_WRITE_TOKEN
-    });
-
-    // Add blob info to request
-    req.blob = {
-      url: blob.url,
-      filename: filename,
-      originalname: req.file.originalname,
-      size: req.file.size,
-      mimetype: req.file.mimetype
-    };
-
-    next();
-  } catch (error) {
-    console.error('Blob upload error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to upload image to storage',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Storage error'
-    });
-  }
-};
-
 // Middleware untuk single file upload
-const uploadSingle = [
-  upload.single('image'),
-  uploadToBlob
-];
+const uploadSingle = (req, res, next) => {
+  const uploadHandler = upload.single('image');
+  
+  uploadHandler(req, res, (err) => {
+    if (err) {
+      console.error('💥 Upload error:', err.message);
+      return next(err);
+    }
+    
+    if (req.file) {
+      console.log('✅ File uploaded successfully:', {
+        filename: req.file.filename,
+        originalname: req.file.originalname,
+        size: req.file.size,
+        path: req.file.path
+      });
+      
+      // Add additional file info
+      req.file.url = `/uploads/${req.file.filename}`;
+      req.file.storageType = 'local';
+    }
+    
+    next();
+  });
+};
 
 // Error handling middleware
 const handleUploadErrors = (err, req, res, next) => {
+  console.error('🚨 Upload error handler:', err.message);
+  
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
         success: false,
-        message: 'File too large. Maximum size is 5MB.'
+        message: 'File too large. Maximum size is 5MB.',
+        error: 'FILE_TOO_LARGE'
       });
     }
     if (err.code === 'LIMIT_FILE_COUNT') {
       return res.status(400).json({
         success: false,
-        message: 'Too many files. Only one file is allowed.'
+        message: 'Too many files. Only one file is allowed.',
+        error: 'TOO_MANY_FILES'
+      });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Unexpected file field. Use "image" field name.',
+        error: 'UNEXPECTED_FIELD'
       });
     }
   }
@@ -89,14 +114,80 @@ const handleUploadErrors = (err, req, res, next) => {
   if (err && err.message.includes('Invalid file type')) {
     return res.status(400).json({
       success: false,
-      message: err.message
+      message: err.message,
+      error: 'INVALID_FILE_TYPE'
+    });
+  }
+  
+  // Generic upload error
+  if (err) {
+    return res.status(400).json({
+      success: false,
+      message: 'File upload failed: ' + err.message,
+      error: 'UPLOAD_FAILED'
     });
   }
   
   next(err);
 };
 
+// Helper function to delete uploaded file
+const deleteUploadedFile = (filePath) => {
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log('🗑️ Deleted file:', filePath);
+      return true;
+    }
+  } catch (error) {
+    console.error('❌ Error deleting file:', filePath, error.message);
+  }
+  return false;
+};
+
+// Helper function to clean old files (optional)
+const cleanOldFiles = (maxAgeHours = 24) => {
+  try {
+    const files = fs.readdirSync(uploadsDir);
+    const now = Date.now();
+    const maxAge = maxAgeHours * 60 * 60 * 1000; // Convert to milliseconds
+    
+    let deletedCount = 0;
+    
+    files.forEach(file => {
+      const filePath = path.join(uploadsDir, file);
+      const stats = fs.statSync(filePath);
+      const age = now - stats.mtime.getTime();
+      
+      if (age > maxAge) {
+        fs.unlinkSync(filePath);
+        deletedCount++;
+      }
+    });
+    
+    if (deletedCount > 0) {
+      console.log(`🧹 Cleaned ${deletedCount} old files`);
+    }
+    
+    return deletedCount;
+  } catch (error) {
+    console.error('❌ Error cleaning old files:', error.message);
+    return 0;
+  }
+};
+
+// Periodic cleanup (run every hour)
+const startPeriodicCleanup = () => {
+  setInterval(() => {
+    cleanOldFiles(24); // Delete files older than 24 hours
+  }, 60 * 60 * 1000); // Run every hour
+};
+
 module.exports = {
   uploadSingle,
-  handleUploadErrors
+  handleUploadErrors,
+  deleteUploadedFile,
+  cleanOldFiles,
+  startPeriodicCleanup,
+  uploadsDir
 };
