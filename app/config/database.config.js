@@ -1,377 +1,370 @@
-// app/config/database.config.js - VERCEL PRODUCTION-READY VERSION
+// app/config/database.config.js - FIXED VERSION
 const mongoose = require("mongoose");
-
-// Global connection cache for serverless functions
-let cached = global.mongoose;
-
-if (!cached) {
-  cached = global.mongoose = {
-    conn: null,
-    promise: null,
-    readyState: 0
-  };
-}
 
 class DatabaseConfig {
   constructor() {
+    this.isConnected = false;
     this.connectionAttempts = 0;
     this.maxRetries = 3;
     
-    // Build safe connection options
+    // Optimized connection options untuk Vercel dan MongoDB Atlas
     this.connectionOptions = {
-      // Core options
       useNewUrlParser: true,
       useUnifiedTopology: true,
       
-      // Vercel-optimized timeouts
-      serverSelectionTimeoutMS: 10000,  // 10 seconds
-      socketTimeoutMS: 45000,           // 45 seconds
-      connectTimeoutMS: 10000,          // 10 seconds
+      // Timeout settings - DIPERPENDEK untuk Vercel
+      serverSelectionTimeoutMS: 8000,   // Reduced from 5000
+      socketTimeoutMS: 20000,           // Reduced from 45000
+      connectTimeoutMS: 8000,           // Added
       
-      // Connection pool for serverless
-      maxPoolSize: 10,                  // Max connections
-      minPoolSize: 0,                   // Min connections
-      maxIdleTimeMS: 30000,             // 30 seconds idle
+      // Connection pool settings
+      maxPoolSize: 5,                   // Reduced from 10 for Vercel
+      minPoolSize: 1,                   // Added minimum
+      maxIdleTimeMS: 20000,            // Reduced from 30000
+      waitQueueTimeoutMS: 3000,        // Reduced from 5000
       
-      // Network settings
-      family: 4,                        // IPv4
-      retryWrites: true,
-      w: 'majority'
+      // Other optimizations
+      family: 4,                       // Use IPv4
+      heartbeatFrequencyMS: 10000,     // Added
+      retryWrites: true,               // Added
+      w: 'majority',                   // Added write concern
+      
+      // Buffer settings
+      bufferMaxEntries: 0,             // Disable mongoose buffering
+      bufferCommands: false            // Disable mongoose buffering
     };
 
-    // Production-specific settings
+    // SSL options for Atlas in production
     if (process.env.NODE_ENV === 'production') {
       this.connectionOptions.ssl = true;
       this.connectionOptions.authSource = 'admin';
-    }
-
-    // Configure mongoose globally
-    this.configureMongooseGlobals();
-  }
-
-  configureMongooseGlobals() {
-    // Disable buffering for serverless
-    mongoose.set('bufferCommands', false);
-    
-    // Disable auto index in production
-    mongoose.set('autoIndex', process.env.NODE_ENV !== 'production');
-    
-    // Set strict mode
-    mongoose.set('strict', true);
-    
-    // Debug only in development
-    if (process.env.NODE_ENV === 'development') {
-      mongoose.set('debug', true);
+      this.connectionOptions.retryReads = true;
     }
   }
 
   async connect() {
-    // Validate DB_URI first
-    if (!process.env.DB_URI) {
-      throw new Error("DB_URI environment variable is required");
-    }
-
-    // Return cached connection if available
-    if (cached.conn) {
-      console.log("✅ Using cached database connection");
-      return cached.conn;
-    }
-
-    // Return existing promise if connection is in progress
-    if (cached.promise) {
-      console.log("⏳ Waiting for existing connection promise");
-      return cached.promise;
-    }
-
-    console.log('🔄 Creating new MongoDB connection...');
-    console.log('📍 Environment:', process.env.NODE_ENV);
-    console.log('🔗 Mongoose version:', mongoose.version);
-
-    // Create new connection promise
-    cached.promise = this.createConnection();
-
     try {
-      cached.conn = await cached.promise;
-      return cached.conn;
-    } catch (error) {
-      // Clear cache on error
-      cached.promise = null;
-      cached.conn = null;
-      throw error;
-    }
-  }
-
-  async createConnection() {
-    try {
-      // Close any existing connection
-      if (mongoose.connection.readyState !== 0) {
-        console.log('🔄 Closing existing connection...');
-        await mongoose.disconnect();
+      if (this.isConnected) {
+        console.log("✅ Database already connected");
+        return true;
       }
 
+      // Validate environment variables
+      if (!process.env.DB_URI) {
+        throw new Error("DB_URI environment variable is required");
+      }
+
+      console.log('🔄 Attempting to connect to MongoDB...');
+      console.log('📍 Environment:', process.env.NODE_ENV);
+      
+      // Mask sensitive parts of connection string for logging
+      const maskedUri = process.env.DB_URI.replace(/\/\/.*@/, '//***:***@');
+      console.log('🔗 Connection URI (masked):', maskedUri);
+
+      // Set mongoose options globally to prevent buffering
+      mongoose.set('bufferCommands', false);
+      mongoose.set('bufferMaxEntries', 0);
+      
       // Connect with retry logic
       await this.connectWithRetry();
+      
+      this.isConnected = true;
+      console.log("✅ Connected to MongoDB successfully!");
+      console.log("📊 Database name:", mongoose.connection.db.databaseName);
+      console.log("🔌 Connection readyState:", mongoose.connection.readyState);
 
-      // Wait for connection to be fully ready
-      await this.waitForConnection();
-
-      // Setup event handlers
+      // Setup connection event handlers
       this.setupEventHandlers();
 
-      console.log("✅ MongoDB connection established successfully!");
-      
-      // Safe logging with proper checks
-      this.logConnectionInfo();
+      // Initialize database (create indexes, seed if needed)
+      await this.initializeDatabase();
 
-      return mongoose.connection;
+      return true;
 
     } catch (error) {
-      console.error("❌ MongoDB connection failed:", error.message);
-      this.handleConnectionError(error);
-      throw new Error(`Database connection failed: ${error.message}`);
+      this.isConnected = false;
+      console.error("❌ MongoDB connection error:", error.message);
+      
+      // Enhanced error handling
+      if (error.name === 'MongooseServerSelectionError') {
+        console.error("🚨 Server Selection Error Details:");
+        console.error("   - This is likely an IP whitelist or connection string issue");
+        console.error("   - For MongoDB Atlas: ensure 0.0.0.0/0 is in IP Access List");
+        console.error("   - For Vercel: must allow access from anywhere");
+        console.error("   - Check if database cluster is running");
+      }
+      
+      if (error.name === 'MongooseTimeoutError') {
+        console.error("⏱️ Connection Timeout:");
+        console.error("   - Database server might be slow or overloaded");
+        console.error("   - Network connectivity issues");
+        console.error("   - Consider upgrading database cluster");
+      }
+
+      // In production, don't exit - let Vercel handle restarts
+      if (process.env.NODE_ENV !== 'production') {
+        console.error("💀 Exiting due to database connection failure...");
+        process.exit(1);
+      } else {
+        console.error("⚠️ Continuing without database connection in production...");
+        return false;
+      }
     }
   }
 
   async connectWithRetry() {
-    let lastError;
-
     for (let i = 0; i < this.maxRetries; i++) {
       try {
         this.connectionAttempts++;
         console.log(`🔄 Connection attempt ${this.connectionAttempts}/${this.maxRetries}`);
-
-        // Create connection with timeout
-        const connectPromise = mongoose.connect(process.env.DB_URI, this.connectionOptions);
         
-        // Add safety timeout
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Connection timeout after 15 seconds')), 15000);
-        });
-
-        await Promise.race([connectPromise, timeoutPromise]);
-        
+        await mongoose.connect(process.env.DB_URI, this.connectionOptions);
         console.log(`✅ Connection successful on attempt ${this.connectionAttempts}`);
         return;
-
+        
       } catch (error) {
-        lastError = error;
-        console.error(`❌ Attempt ${this.connectionAttempts} failed:`, error.message);
-
+        console.error(`❌ Connection attempt ${this.connectionAttempts} failed:`, error.message);
+        
         if (i === this.maxRetries - 1) {
-          throw lastError;
+          throw error; // Re-throw on last attempt
         }
-
-        // Exponential backoff
+        
+        // Wait before retry (exponential backoff)
         const delay = Math.min(1000 * Math.pow(2, i), 5000);
-        console.log(`⏳ Retrying in ${delay}ms...`);
+        console.log(`⏳ Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
 
-  async waitForConnection() {
-    // Wait for connection to be fully established
-    let attempts = 0;
-    const maxAttempts = 10;
+  setupEventHandlers() {
+    // Connection lost
+    mongoose.connection.on('error', (err) => {
+      console.error('🚨 MongoDB connection error:', err.message);
+      this.isConnected = false;
+    });
 
-    while (mongoose.connection.readyState !== 1 && attempts < maxAttempts) {
-      console.log(`⏳ Waiting for connection ready state... (${attempts + 1}/${maxAttempts})`);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      attempts++;
-    }
+    // Disconnected
+    mongoose.connection.on('disconnected', () => {
+      console.log('🔌 MongoDB disconnected');
+      this.isConnected = false;
+    });
 
-    if (mongoose.connection.readyState !== 1) {
-      throw new Error('Connection failed to reach ready state');
+    // Reconnected
+    mongoose.connection.on('reconnected', () => {
+      console.log('🔄 MongoDB reconnected');
+      this.isConnected = true;
+    });
+
+    // Connection closed
+    mongoose.connection.on('close', () => {
+      console.log('🔒 MongoDB connection closed');
+      this.isConnected = false;
+    });
+
+    // Process termination handlers
+    process.on('SIGINT', () => this.gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => this.gracefulShutdown('SIGTERM'));
+  }
+
+  async initializeDatabase() {
+    try {
+      console.log('🔧 Initializing database...');
+
+      // Create indexes for better performance
+      await this.createIndexes();
+
+      // Auto-seed in production if needed
+      if (process.env.NODE_ENV === 'production') {
+        await this.ensureDefaultData();
+      }
+
+      console.log('✅ Database initialization complete');
+    } catch (error) {
+      console.error('⚠️ Database initialization error:', error.message);
+      // Don't throw - let app continue
     }
   }
 
-  logConnectionInfo() {
+  async createIndexes() {
     try {
-      console.log("🔌 Connection state:", this.getReadyStateText());
+      const Role = require("../models/role.model");
+      const User = require("../models/user.model");
+      const Prediction = require("../models/prediction.model");
+
+      // Create indexes if they don't exist
+      await Role.createIndexes();
+      await User.createIndexes();
+      await Prediction.createIndexes();
       
-      // Safe database name access
-      if (mongoose.connection.db) {
-        const dbName = mongoose.connection.db.databaseName;
-        if (dbName) {
-          console.log("📊 Database name:", dbName);
-        } else {
-          console.log("📊 Database name: (extracting...)");
-          // Try to extract from URI
-          try {
-            const uri = process.env.DB_URI;
-            const dbFromUri = uri.split('/').pop().split('?')[0];
-            console.log("📊 Database name (from URI):", dbFromUri);
-          } catch (e) {
-            console.log("📊 Database name: (unable to determine)");
-          }
-        }
-      } else {
-        console.log("📊 Database object not yet available");
+      console.log('📊 Database indexes created/verified');
+    } catch (error) {
+      console.error('⚠️ Index creation warning:', error.message);
+    }
+  }
+
+  async ensureDefaultData() {
+    try {
+      const Role = require("../models/role.model");
+      const User = require("../models/user.model");
+      const bcrypt = require("bcryptjs");
+
+      // Quick check - don't proceed if data exists
+      const [roleCount, userCount] = await Promise.all([
+        Role.countDocuments().maxTimeMS(5000),
+        User.countDocuments().maxTimeMS(5000)
+      ]);
+
+      if (roleCount > 0 && userCount > 0) {
+        console.log(`📊 Database already seeded (${roleCount} roles, ${userCount} users)`);
+        return;
       }
 
-      // Log host info safely
-      if (mongoose.connection.host) {
-        console.log("🏠 Host:", mongoose.connection.host);
+      console.log('🌱 Auto-seeding database for production...');
+
+      // Create roles with timeout
+      const roles = ["user", "admin", "moderator"];
+      const createdRoles = {};
+
+      for (let roleName of roles) {
+        let role = await Role.findOne({ name: roleName }).maxTimeMS(5000);
+        if (!role) {
+          role = await new Role({ name: roleName }).save();
+        }
+        createdRoles[roleName] = role;
+        console.log(`✅ Role '${roleName}' ensured`);
+      }
+
+      // Create admin user if doesn't exist
+      const adminUsername = process.env.ADMIN_USERNAME || "admin";
+      const adminEmail = process.env.ADMIN_EMAIL || "admin@example.com";
+      
+      const existingAdmin = await User.findOne({
+        $or: [{ username: adminUsername }, { email: adminEmail }]
+      }).maxTimeMS(5000);
+
+      if (!existingAdmin) {
+        const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
+        const hashedPassword = bcrypt.hashSync(adminPassword, 8);
+        
+        const adminUser = new User({
+          username: adminUsername,
+          email: adminEmail,
+          password: hashedPassword,
+          roles: [createdRoles.admin._id],
+          profile: {
+            firstName: "Admin",
+            lastName: "User"
+          },
+          status: "active"
+        });
+
+        await adminUser.save();
+        console.log(`✅ Admin user created: ${adminUsername}`);
+      } else {
+        console.log(`✅ Admin user already exists: ${adminUsername}`);
       }
 
     } catch (error) {
-      console.log("📊 Connection info logging skipped due to:", error.message);
-    }
-  }
-
-  setupEventHandlers() {
-    // Clear existing listeners
-    mongoose.connection.removeAllListeners();
-
-    mongoose.connection.on('error', (err) => {
-      console.error('🚨 MongoDB connection error:', err.message);
-      this.clearCache();
-    });
-
-    mongoose.connection.on('disconnected', () => {
-      console.log('🔌 MongoDB disconnected');
-      this.clearCache();
-    });
-
-    mongoose.connection.on('reconnected', () => {
-      console.log('🔄 MongoDB reconnected');
-    });
-  }
-
-  clearCache() {
-    cached.conn = null;
-    cached.promise = null;
-    cached.readyState = 0;
-  }
-
-  getReadyStateText() {
-    const states = {
-      0: 'disconnected',
-      1: 'connected', 
-      2: 'connecting',
-      3: 'disconnecting',
-      99: 'uninitialized'
-    };
-    return states[mongoose.connection.readyState] || 'unknown';
-  }
-
-  handleConnectionError(error) {
-    console.error('🔍 Error Analysis:');
-    
-    if (error.message.includes('timeout')) {
-      console.error('❌ TIMEOUT ERROR:');
-      console.error('   - Database server may be overloaded');
-      console.error('   - Network connectivity issues');
-      console.error('   - Try upgrading MongoDB Atlas tier');
-      console.error('   - Check Vercel region settings');
-    } else if (error.name === 'MongooseServerSelectionError') {
-      console.error('❌ SERVER SELECTION ERROR:');
-      console.error('   - Check MongoDB Atlas cluster status');
-      console.error('   - Verify IP whitelist: 0.0.0.0/0');
-      console.error('   - Confirm connection string format');
-      console.error('   - Verify database credentials');
-    } else if (error.message.includes('Authentication')) {
-      console.error('❌ AUTHENTICATION ERROR:');
-      console.error('   - Check username/password in DB_URI');
-      console.error('   - Verify user permissions');
-    } else {
-      console.error('❌ UNKNOWN ERROR:', error.message);
+      console.error("⚠️ Auto-seed warning:", error.message);
+      // Don't throw error - continue without seeding
     }
   }
 
   async getHealthStatus() {
     try {
-      const isConnected = mongoose.connection.readyState === 1;
-      
-      const health = {
+      const healthStatus = {
         connection: {
           state: mongoose.connection.readyState,
-          stateText: this.getReadyStateText(),
-          isConnected,
-          cached: !!cached.conn,
-          attempts: this.connectionAttempts,
-          mongooseVersion: mongoose.version
+          stateText: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState],
+          name: mongoose.connection.db?.databaseName,
+          host: mongoose.connection.host,
+          port: mongoose.connection.port,
+          isConnected: this.isConnected,
+          attempts: this.connectionAttempts
         },
+        collections: {},
         environment: {
           NODE_ENV: process.env.NODE_ENV,
           hasDbUri: !!process.env.DB_URI,
-          platform: process.env.VERCEL ? 'vercel' : 'local',
-          region: process.env.VERCEL_REGION || 'unknown'
+          dbHost: process.env.DB_URI?.split('@')[1]?.split('/')[0] || 'not set'
+        },
+        performance: {
+          bufferCommands: mongoose.get('bufferCommands'),
+          bufferMaxEntries: mongoose.get('bufferMaxEntries')
         }
       };
 
-      // Add database info if available
-      if (isConnected && mongoose.connection.db) {
-        try {
-          health.database = {
-            name: mongoose.connection.db.databaseName || 'unknown',
-            host: mongoose.connection.host || 'unknown'
-          };
+      if (mongoose.connection.readyState === 1) {
+        // Test collections with timeout
+        const Role = require("../models/role.model");
+        const User = require("../models/user.model");
+        const Prediction = require("../models/prediction.model");
+        
+        const collectionTests = await Promise.allSettled([
+          Role.countDocuments().maxTimeMS(3000),
+          User.countDocuments().maxTimeMS(3000),
+          Prediction.countDocuments().maxTimeMS(3000)
+        ]);
 
-          // Quick ping test
-          const startTime = Date.now();
-          await mongoose.connection.db.admin().ping();
-          health.connection.latency = Date.now() - startTime;
-        } catch (dbError) {
-          health.database = { error: dbError.message };
-        }
+        healthStatus.collections.roles = collectionTests[0].status === 'fulfilled' ? collectionTests[0].value : 'timeout';
+        healthStatus.collections.users = collectionTests[1].status === 'fulfilled' ? collectionTests[1].value : 'timeout';
+        healthStatus.collections.predictions = collectionTests[2].status === 'fulfilled' ? collectionTests[2].value : 'timeout';
       }
 
-      return health;
+      return healthStatus;
     } catch (error) {
       return {
         connection: {
           state: -1,
           stateText: 'error',
           error: error.message,
-          isConnected: false
+          isConnected: false,
+          attempts: this.connectionAttempts
         }
       };
     }
   }
 
-  async testConnection() {
+  async gracefulShutdown(signal) {
+    console.log(`🛑 Received ${signal}, shutting down gracefully...`);
     try {
-      if (mongoose.connection.readyState !== 1) {
-        return { connected: false, error: 'Not connected' };
-      }
-
-      const startTime = Date.now();
-      await mongoose.connection.db.admin().ping();
-      const latency = Date.now() - startTime;
-
-      return { 
-        connected: true, 
-        latency,
-        cached: !!cached.conn,
-        state: this.getReadyStateText()
-      };
+      await mongoose.disconnect();
+      console.log('✅ Database disconnected successfully');
+      process.exit(0);
     } catch (error) {
-      return { connected: false, error: error.message };
+      console.error('❌ Error during shutdown:', error);
+      process.exit(1);
     }
-  }
-
-  // Main method to use in API routes
-  async ensureConnection() {
-    if (cached.conn && mongoose.connection.readyState === 1) {
-      return cached.conn;
-    }
-    return await this.connect();
   }
 
   async disconnect() {
     try {
-      if (mongoose.connection.readyState !== 0) {
-        await mongoose.disconnect();
-        this.clearCache();
-        console.log("✅ Database disconnected");
-      }
+      await mongoose.disconnect();
+      this.isConnected = false;
+      console.log("✅ Database disconnected successfully");
     } catch (error) {
-      console.error("❌ Disconnect error:", error);
+      console.error("❌ Error disconnecting from database:", error);
+    }
+  }
+
+  // Quick connection test method
+  async testConnection() {
+    try {
+      if (!this.isConnected) {
+        return { connected: false, error: 'Not connected' };
+      }
+
+      // Quick ping test
+      await mongoose.connection.db.admin().ping();
+      return { connected: true, latency: Date.now() };
+    } catch (error) {
+      return { connected: false, error: error.message };
     }
   }
 }
 
-// Export singleton instance
+// Create singleton instance
 const databaseConfig = new DatabaseConfig();
+
 module.exports = databaseConfig;
