@@ -47,7 +47,7 @@ class DatabaseConfig {
     mongoose.set('bufferCommands', false);
     
     // Set timeout for operations
-    mongoose.set('maxTimeMS', 10000);
+    mongoose.set('maxTimeMS', 20000);
     
     // Disable automatic index creation in production
     if (process.env.NODE_ENV === 'production') {
