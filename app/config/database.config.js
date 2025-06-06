@@ -29,9 +29,8 @@ class DatabaseConfig {
       retryWrites: true,               // Added
       w: 'majority',                   // Added write concern
       
-      // Buffer settings
-      bufferMaxEntries: 0,             // Disable mongoose buffering
-      bufferCommands: false            // Disable mongoose buffering
+      // Buffer settings - REMOVED invalid options
+      // bufferMaxEntries and bufferCommands are mongoose settings, not connection options
     };
 
     // SSL options for Atlas in production
@@ -61,9 +60,16 @@ class DatabaseConfig {
       const maskedUri = process.env.DB_URI.replace(/\/\/.*@/, '//***:***@');
       console.log('🔗 Connection URI (masked):', maskedUri);
 
-      // Set mongoose options globally to prevent buffering
+      // Set mongoose options globally to prevent buffering - MOVED HERE
       mongoose.set('bufferCommands', false);
-      mongoose.set('bufferMaxEntries', 0);
+      if (mongoose.set.length > 1) {
+        // Only set if mongoose version supports it
+        try {
+          mongoose.set('bufferMaxEntries', 0);
+        } catch (e) {
+          console.log('ℹ️ bufferMaxEntries not supported in this mongoose version');
+        }
+      }
       
       // Connect with retry logic
       await this.connectWithRetry();
@@ -291,7 +297,7 @@ class DatabaseConfig {
         },
         performance: {
           bufferCommands: mongoose.get('bufferCommands'),
-          bufferMaxEntries: mongoose.get('bufferMaxEntries')
+          // Removed bufferMaxEntries check as it's not always available
         }
       };
 
