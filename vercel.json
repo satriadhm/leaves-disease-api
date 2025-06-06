@@ -41,6 +41,13 @@
     {
       "source": "/(.*)",
       "destination": "/server.js"
+    }, {
+      "source": "/troubleshoot",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/api/troubleshoot/(.*)",
+      "destination": "/server.js"
     }
   ],
   "headers": [
