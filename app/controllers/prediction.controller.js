@@ -12,9 +12,13 @@ const { deleteUploadedFile } = require('../middleware/upload');
 let model = null;
 let classNames = [];
 
-const MODEL_PATH = path.join(__dirname, '../../models/tfjs_model/model.json');
-const LABELS_PATH = path.join(__dirname, '../../models/labels.txt');
+const MODEL_PATH = process.env.NODE_ENV === 'production' 
+  ? path.join(process.cwd(), 'models/tfjs_model/model.json')
+  : path.join(__dirname, '../../models/tfjs_model/model.json');
 
+const LABELS_PATH = process.env.NODE_ENV === 'production'
+  ? path.join(process.cwd(), 'models/labels.txt')
+  : path.join(__dirname, '../../models/labels.txt');
 // Initialize model
 const initializeModel = async () => {
   try {

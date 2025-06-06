@@ -1,9 +1,10 @@
-// server.js - Updated for local storage support
+// server.js - Railway Compatible Version
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
+const compression = require("compression");
 const path = require("path");
 const fs = require("fs");
 
@@ -17,7 +18,22 @@ const { startPeriodicCleanup, uploadsDir } = require("./app/middleware/upload");
 // Initialize Express app
 const app = express();
 
+// Railway fix: Trust proxy for correct protocol detection
 app.set('trust proxy', 1);
+
+// Railway fix: Force HTTPS redirect in production
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.header('x-forwarded-proto') !== 'https') {
+      res.redirect(`https://${req.header('host')}${req.url}`);
+    } else {
+      next();
+    }
+  });
+}
+
+// Compression middleware for better performance
+app.use(compression());
 
 // Ensure uploads directory exists
 if (!fs.existsSync(uploadsDir)) {
@@ -179,6 +195,7 @@ app.get("/", (req, res) => {
     status: "OK",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
+    platform: 'Railway',
     database: {
       connected: databaseConfig.isConnected
     },
@@ -290,6 +307,16 @@ app.get("/status/storage", (req, res) => {
   }
 });
 
+// Railway health endpoint (Railway expects this)
+app.get("/healthz", (req, res) => {
+  res.status(200).json({ 
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage()
+  });
+});
+
 // 404 handler for undefined routes
 app.use("*", (req, res) => {
   res.status(404).json({
@@ -349,10 +376,11 @@ process.on('SIGINT', async () => {
 // Start server
 const PORT = process.env.PORT || 8000;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('🚀 ================================');
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📦 Platform: Railway`);
   console.log('🚀 ================================');
   console.log(`📚 API Documentation: http://localhost:${PORT}/api/docs`);
   console.log(`🔍 Health Check: http://localhost:${PORT}/health`);
@@ -382,6 +410,14 @@ const server = app.listen(PORT, () => {
     }
     
     console.log('🚀 ================================');
+    
+    // Railway-specific startup message
+    if (process.env.NODE_ENV === 'production') {
+      console.log('🚂 Railway Deployment Info:');
+      console.log(`🌐 Public URL: https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'your-app.up.railway.app'}`);
+      console.log(`📝 Environment Variables: ${Object.keys(process.env).filter(key => !key.includes('PASSWORD') && !key.includes('SECRET')).length} loaded`);
+      console.log('🚀 ================================');
+    }
   }, 3000);
 });
 

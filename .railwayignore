@@ -1,0 +1,46 @@
+node_modules/
+.git/
+.env
+.env.local
+.env.example
+.env.development
+.env.test
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
+.nyc_output/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Exclude uploaded files to reduce deployment size
+uploads/*.jpg
+uploads/*.png
+uploads/*.jpeg
+uploads/*.webp
+uploads/*.gif
+
+# Keep .gitkeep but exclude actual uploaded files
+!uploads/.gitkeep
+
+# Test files
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development tools
+.eslintrc*
+.prettierrc*
+.editorconfig

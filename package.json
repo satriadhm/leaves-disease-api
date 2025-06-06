@@ -27,6 +27,7 @@
     "@tensorflow/tfjs": "^4.15.0",
     "@tensorflow/tfjs-backend-cpu": "^4.15.0",
     "bcryptjs": "^2.4.3",
+    "compression": "^1.8.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",

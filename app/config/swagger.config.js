@@ -42,17 +42,23 @@ class SwaggerConfig {
   }
 
   getSwaggerDoc(req) {
-    const isProduction = process.env.NODE_ENV === 'production';
-    const host = req.get('host');
-    const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    
-    return {
-      ...this.baseConfig,
-      host: host,
-      schemes: [protocol],
-      paths: this.getPaths(),
-      definitions: this.getDefinitions()
-    };
+  // RAILWAY FIX: Force HTTPS and correct host detection
+  const isProduction = process.env.NODE_ENV === 'production';
+  const host = req.get('host');
+  
+  // Railway always uses HTTPS in production
+  const protocol = isProduction ? 'https' : (req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http');
+  
+  // For Railway, ensure we use the correct scheme
+  const schemes = isProduction ? ['https'] : [protocol];
+  
+  return {
+    ...this.baseConfig,
+    host: host,
+    schemes: schemes,
+    paths: this.getPaths(),
+    definitions: this.getDefinitions()
+  };
   }
 
   getPaths() {

@@ -1,4 +1,4 @@
-// app/config/cors.config.js
+// app/config/cors.config.js - Railway Compatible Version
 class CorsConfig {
   constructor() {
     this.corsOptions = {
@@ -24,10 +24,15 @@ class CorsConfig {
     // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
 
-    // Localhost patterns
-    const localhostRegex = /^http:\/\/localhost:\d+$/;
-    const localhostIPRegex = /^http:\/\/127\.0\.0\.1:\d+$/;
-    const localhostIPv4Regex = /^http:\/\/192\.168\.\d+\.\d+:\d+$/;
+    // Railway domains - CRITICAL FOR RAILWAY DEPLOYMENT
+    if (origin.includes('railway.app') || origin.includes('up.railway.app')) {
+      return callback(null, true);
+    }
+
+    // Localhost patterns for development
+    const localhostRegex = /^https?:\/\/localhost:\d+$/;
+    const localhostIPRegex = /^https?:\/\/127\.0\.0\.1:\d+$/;
+    const localhostIPv4Regex = /^https?:\/\/192\.168\.\d+\.\d+:\d+$/;
 
     if (localhostRegex.test(origin) || localhostIPRegex.test(origin) || localhostIPv4Regex.test(origin)) {
       return callback(null, true);
@@ -35,25 +40,19 @@ class CorsConfig {
 
     // Development tunneling services
     const tunnelServices = [
-      'ngrok.io',
-      'ngrok-free.app',
-      'ngrok.app',
-      'ngrok.dev',
-      'loca.lt',
-      'serveo.net'
+      'ngrok.io', 'ngrok-free.app', 'ngrok.app', 'ngrok.dev',
+      'loca.lt', 'serveo.net'
     ];
 
     if (tunnelServices.some(service => origin.includes(service))) {
       return callback(null, true);
     }
 
-    // Vercel and Netlify
+    // Deployment services
     const deploymentServices = [
-      'vercel.app',
-      'vercel.sh',
-      'now.sh',
-      'netlify.app',
-      'netlify.com'
+      'vercel.app', 'vercel.sh', 'now.sh',
+      'netlify.app', 'netlify.com',
+      'railway.app' // Added Railway support
     ];
 
     if (deploymentServices.some(service => origin.includes(service))) {
@@ -71,7 +70,7 @@ class CorsConfig {
       return callback(null, true);
     }
 
-    // Production HTTPS origins
+    // Production HTTPS origins - RAILWAY USES HTTPS
     if (process.env.NODE_ENV === 'production' && origin.startsWith('https://')) {
       return callback(null, true);
     }
