@@ -1,4 +1,3 @@
-// app/config/database.config.js - FIXED VERSION
 const mongoose = require("mongoose");
 
 class DatabaseConfig {
@@ -7,33 +6,26 @@ class DatabaseConfig {
     this.connectionAttempts = 0;
     this.maxRetries = 3;
     
-    // Optimized connection options untuk Vercel dan MongoDB Atlas
     this.connectionOptions = {
       useNewUrlParser: true,
       useUnifiedTopology: true,
       
-      // Timeout settings - DIPERPENDEK untuk Vercel
       serverSelectionTimeoutMS: 8000,   // Reduced from 5000
       socketTimeoutMS: 20000,           // Reduced from 45000
       connectTimeoutMS: 8000,           // Added
       
-      // Connection pool settings
       maxPoolSize: 5,                   // Reduced from 10 for Vercel
       minPoolSize: 1,                   // Added minimum
       maxIdleTimeMS: 20000,            // Reduced from 30000
       waitQueueTimeoutMS: 3000,        // Reduced from 5000
       
-      // Other optimizations
       family: 4,                       // Use IPv4
       heartbeatFrequencyMS: 10000,     // Added
       retryWrites: true,               // Added
       w: 'majority',                   // Added write concern
       
-      // Buffer settings - REMOVED invalid options
-      // bufferMaxEntries and bufferCommands are mongoose settings, not connection options
     };
 
-    // SSL options for Atlas in production
     if (process.env.NODE_ENV === 'production') {
       this.connectionOptions.ssl = true;
       this.connectionOptions.authSource = 'admin';
@@ -56,22 +48,9 @@ class DatabaseConfig {
       console.log('🔄 Attempting to connect to MongoDB...');
       console.log('📍 Environment:', process.env.NODE_ENV);
       
-      // Mask sensitive parts of connection string for logging
       const maskedUri = process.env.MONGODB_URI.replace(/\/\/.*@/, '//***:***@');
       console.log('🔗 Connection URI (masked):', maskedUri);
-
-      // Set mongoose options globally to prevent buffering - MOVED HERE
-      mongoose.set('bufferCommands', false);
-      if (mongoose.set.length > 1) {
-        // Only set if mongoose version supports it
-        try {
-          mongoose.set('bufferMaxEntries', 0);
-        } catch (e) {
-          console.log('ℹ️ bufferMaxEntries not supported in this mongoose version');
-        }
-      }
       
-      // Connect with retry logic
       await this.connectWithRetry();
       
       this.isConnected = true;
@@ -79,7 +58,6 @@ class DatabaseConfig {
       console.log("📊 Database name:", mongoose.connection.db.databaseName);
       console.log("🔌 Connection readyState:", mongoose.connection.readyState);
 
-      // Setup connection event handlers
       this.setupEventHandlers();
 
       // Initialize database (create indexes, seed if needed)

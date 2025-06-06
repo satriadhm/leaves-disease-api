@@ -14,8 +14,7 @@ const { errorHandler } = require("./app/middleware/errorHandler");
 // Initialize Express app
 const app = express();
 
-// Trust proxy for production (Vercel)
-app.set('trust proxy', 1);
+app.set('trust proxy', true);
 
 // Security middleware
 app.use(helmet({
