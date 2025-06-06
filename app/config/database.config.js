@@ -1,244 +1,253 @@
-// app/config/database.config.js - SAFE VERSION FOR ALL MONGOOSE VERSIONS
+// app/config/database.config.js - VERCEL PRODUCTION-READY VERSION
 const mongoose = require("mongoose");
 
 // Global connection cache for serverless functions
-let cachedConnection = null;
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = {
+    conn: null,
+    promise: null,
+    readyState: 0
+  };
+}
 
 class DatabaseConfig {
   constructor() {
     this.connectionAttempts = 0;
-    this.maxRetries = 2;
+    this.maxRetries = 3;
     
-    // Check Mongoose version for compatibility
-    this.mongooseVersion = this.parseMongooseVersion();
-    console.log(`🔍 Detected Mongoose version: ${mongoose.version} (major: ${this.mongooseVersion.major})`);
-    
-    // Build connection options based on version
-    this.connectionOptions = this.buildConnectionOptions();
-    
-    // Set global mongoose settings
+    // Build safe connection options
+    this.connectionOptions = {
+      // Core options
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      
+      // Vercel-optimized timeouts
+      serverSelectionTimeoutMS: 10000,  // 10 seconds
+      socketTimeoutMS: 45000,           // 45 seconds
+      connectTimeoutMS: 10000,          // 10 seconds
+      
+      // Connection pool for serverless
+      maxPoolSize: 10,                  // Max connections
+      minPoolSize: 0,                   // Min connections
+      maxIdleTimeMS: 30000,             // 30 seconds idle
+      
+      // Network settings
+      family: 4,                        // IPv4
+      retryWrites: true,
+      w: 'majority'
+    };
+
+    // Production-specific settings
+    if (process.env.NODE_ENV === 'production') {
+      this.connectionOptions.ssl = true;
+      this.connectionOptions.authSource = 'admin';
+    }
+
+    // Configure mongoose globally
     this.configureMongooseGlobals();
   }
 
-  parseMongooseVersion() {
-    const version = mongoose.version;
-    const parts = version.split('.');
-    return {
-      major: parseInt(parts[0]),
-      minor: parseInt(parts[1]),
-      patch: parseInt(parts[2]),
-      full: version
-    };
-  }
-
-  buildConnectionOptions() {
-    const baseOptions = {
-      // Always supported options
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    };
-
-    // Timeout settings - supported in all versions
-    const timeoutOptions = {
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 8000,
-      connectTimeoutMS: 5000,
-    };
-
-    // Connection pool settings
-    const poolOptions = {
-      maxPoolSize: 3,
-      minPoolSize: 0,
-      maxIdleTimeMS: 5000,
-    };
-
-    // Version-specific options
-    const versionSpecificOptions = {};
-
-    // For Mongoose 6+
-    if (this.mongooseVersion.major >= 6) {
-      versionSpecificOptions.heartbeatFrequencyMS = 30000;
-      versionSpecificOptions.family = 4; // IPv4
-    }
-
-    // For Mongoose 5.x, add older options if needed
-    if (this.mongooseVersion.major === 5) {
-      // Add any Mongoose 5 specific options here
-      versionSpecificOptions.useCreateIndex = true;
-      versionSpecificOptions.useFindAndModify = false;
-    }
-
-    // Network and performance settings
-    const networkOptions = {
-      retryWrites: true,
-      w: 'majority',
-    };
-
-    // SSL and authentication for production
-    const authOptions = {};
-    if (process.env.NODE_ENV === 'production') {
-      authOptions.ssl = true;
-      authOptions.authSource = 'admin';
-    }
-
-    // Combine all options
-    const finalOptions = {
-      ...baseOptions,
-      ...timeoutOptions,
-      ...poolOptions,
-      ...versionSpecificOptions,
-      ...networkOptions,
-      ...authOptions
-    };
-
-    console.log('🔧 Connection options built:', Object.keys(finalOptions));
-    return finalOptions;
-  }
-
   configureMongooseGlobals() {
-    try {
-      // Set buffer commands globally - works in all versions
-      mongoose.set('bufferCommands', false);
-      
-      // Set operation timeout
-      if (this.mongooseVersion.major >= 6) {
-        mongoose.set('maxTimeMS', 8000);
-      }
-      
-      // Always disable automatic index creation in production
-      mongoose.set('autoIndex', process.env.NODE_ENV !== 'production');
-      
-      // Set strict mode
-      mongoose.set('strict', true);
-      
-      // Debug mode only in development
-      if (process.env.NODE_ENV === 'development') {
-        mongoose.set('debug', true);
-      }
-
-      console.log('✅ Mongoose global settings configured');
-    } catch (error) {
-      console.warn('⚠️ Some global settings may not be supported:', error.message);
+    // Disable buffering for serverless
+    mongoose.set('bufferCommands', false);
+    
+    // Disable auto index in production
+    mongoose.set('autoIndex', process.env.NODE_ENV !== 'production');
+    
+    // Set strict mode
+    mongoose.set('strict', true);
+    
+    // Debug only in development
+    if (process.env.NODE_ENV === 'development') {
+      mongoose.set('debug', true);
     }
   }
 
   async connect() {
+    // Validate DB_URI first
+    if (!process.env.DB_URI) {
+      throw new Error("DB_URI environment variable is required");
+    }
+
+    // Return cached connection if available
+    if (cached.conn) {
+      console.log("✅ Using cached database connection");
+      return cached.conn;
+    }
+
+    // Return existing promise if connection is in progress
+    if (cached.promise) {
+      console.log("⏳ Waiting for existing connection promise");
+      return cached.promise;
+    }
+
+    console.log('🔄 Creating new MongoDB connection...');
+    console.log('📍 Environment:', process.env.NODE_ENV);
+    console.log('🔗 Mongoose version:', mongoose.version);
+
+    // Create new connection promise
+    cached.promise = this.createConnection();
+
     try {
-      // Return cached connection if available and valid
-      if (cachedConnection && mongoose.connection.readyState === 1) {
-        console.log("✅ Using cached database connection");
-        return cachedConnection;
-      }
+      cached.conn = await cached.promise;
+      return cached.conn;
+    } catch (error) {
+      // Clear cache on error
+      cached.promise = null;
+      cached.conn = null;
+      throw error;
+    }
+  }
 
-      // Validate environment variables
-      if (!process.env.DB_URI) {
-        throw new Error("DB_URI environment variable is required");
-      }
-
-      console.log('🔄 Creating new MongoDB connection...');
-      console.log('📍 Environment:', process.env.NODE_ENV);
-      console.log('🔗 Mongoose version:', mongoose.version);
-      
-      // Mask sensitive parts of connection string for logging
-      const maskedUri = process.env.DB_URI.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@');
-      console.log('🔗 Connection URI (masked):', maskedUri);
-      
-      // Close any existing connections first
+  async createConnection() {
+    try {
+      // Close any existing connection
       if (mongoose.connection.readyState !== 0) {
         console.log('🔄 Closing existing connection...');
         await mongoose.disconnect();
       }
-      
+
       // Connect with retry logic
       await this.connectWithRetry();
-      
-      // Cache the connection
-      cachedConnection = mongoose.connection;
-      
-      console.log("✅ New MongoDB connection established!");
-      console.log("📊 Database name:", mongoose.connection.db.databaseName);
-      console.log("🔌 Connection state:", this.getReadyStateText());
 
-      // Setup minimal event handlers
-      this.setupMinimalEventHandlers();
+      // Wait for connection to be fully ready
+      await this.waitForConnection();
 
-      return cachedConnection;
+      // Setup event handlers
+      this.setupEventHandlers();
+
+      console.log("✅ MongoDB connection established successfully!");
+      
+      // Safe logging with proper checks
+      this.logConnectionInfo();
+
+      return mongoose.connection;
 
     } catch (error) {
-      console.error("❌ MongoDB connection error:", error.message);
-      
-      // Enhanced error handling
+      console.error("❌ MongoDB connection failed:", error.message);
       this.handleConnectionError(error);
-
-      // In serverless, throw the error instead of exiting
       throw new Error(`Database connection failed: ${error.message}`);
     }
   }
 
   async connectWithRetry() {
+    let lastError;
+
     for (let i = 0; i < this.maxRetries; i++) {
       try {
         this.connectionAttempts++;
         console.log(`🔄 Connection attempt ${this.connectionAttempts}/${this.maxRetries}`);
-        console.log('🔧 Using options:', Object.keys(this.connectionOptions));
-        
-        // Create connection promise
+
+        // Create connection with timeout
         const connectPromise = mongoose.connect(process.env.DB_URI, this.connectionOptions);
         
-        // Add timeout wrapper for extra safety
+        // Add safety timeout
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Connection timeout after 10s')), 10000);
+          setTimeout(() => reject(new Error('Connection timeout after 15 seconds')), 15000);
         });
-        
-        // Race between connection and timeout
+
         await Promise.race([connectPromise, timeoutPromise]);
         
         console.log(`✅ Connection successful on attempt ${this.connectionAttempts}`);
         return;
-        
+
       } catch (error) {
-        console.error(`❌ Connection attempt ${this.connectionAttempts} failed:`, error.message);
-        
-        // Log specific error details
-        if (error.message.includes('not supported')) {
-          console.error('🚨 Configuration Error - Unsupported option detected');
-          console.error('🔧 Current Mongoose version:', mongoose.version);
-          console.error('🔧 Options used:', Object.keys(this.connectionOptions));
-        }
-        
+        lastError = error;
+        console.error(`❌ Attempt ${this.connectionAttempts} failed:`, error.message);
+
         if (i === this.maxRetries - 1) {
-          throw error; // Re-throw on last attempt
+          throw lastError;
         }
-        
-        // Wait before retry with exponential backoff
-        const delay = Math.min(2000 * (i + 1), 5000);
-        console.log(`⏳ Waiting ${delay}ms before retry...`);
+
+        // Exponential backoff
+        const delay = Math.min(1000 * Math.pow(2, i), 5000);
+        console.log(`⏳ Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
 
-  setupMinimalEventHandlers() {
-    // Remove existing listeners to prevent duplicates
-    mongoose.connection.removeAllListeners('error');
-    mongoose.connection.removeAllListeners('disconnected');
+  async waitForConnection() {
+    // Wait for connection to be fully established
+    let attempts = 0;
+    const maxAttempts = 10;
 
-    // Essential error handlers only
+    while (mongoose.connection.readyState !== 1 && attempts < maxAttempts) {
+      console.log(`⏳ Waiting for connection ready state... (${attempts + 1}/${maxAttempts})`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      attempts++;
+    }
+
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error('Connection failed to reach ready state');
+    }
+  }
+
+  logConnectionInfo() {
+    try {
+      console.log("🔌 Connection state:", this.getReadyStateText());
+      
+      // Safe database name access
+      if (mongoose.connection.db) {
+        const dbName = mongoose.connection.db.databaseName;
+        if (dbName) {
+          console.log("📊 Database name:", dbName);
+        } else {
+          console.log("📊 Database name: (extracting...)");
+          // Try to extract from URI
+          try {
+            const uri = process.env.DB_URI;
+            const dbFromUri = uri.split('/').pop().split('?')[0];
+            console.log("📊 Database name (from URI):", dbFromUri);
+          } catch (e) {
+            console.log("📊 Database name: (unable to determine)");
+          }
+        }
+      } else {
+        console.log("📊 Database object not yet available");
+      }
+
+      // Log host info safely
+      if (mongoose.connection.host) {
+        console.log("🏠 Host:", mongoose.connection.host);
+      }
+
+    } catch (error) {
+      console.log("📊 Connection info logging skipped due to:", error.message);
+    }
+  }
+
+  setupEventHandlers() {
+    // Clear existing listeners
+    mongoose.connection.removeAllListeners();
+
     mongoose.connection.on('error', (err) => {
       console.error('🚨 MongoDB connection error:', err.message);
-      cachedConnection = null; // Clear cache on error
+      this.clearCache();
     });
 
     mongoose.connection.on('disconnected', () => {
       console.log('🔌 MongoDB disconnected');
-      cachedConnection = null; // Clear cache on disconnect
+      this.clearCache();
     });
+
+    mongoose.connection.on('reconnected', () => {
+      console.log('🔄 MongoDB reconnected');
+    });
+  }
+
+  clearCache() {
+    cached.conn = null;
+    cached.promise = null;
+    cached.readyState = 0;
   }
 
   getReadyStateText() {
     const states = {
       0: 'disconnected',
-      1: 'connected',
+      1: 'connected', 
       2: 'connecting',
       3: 'disconnecting',
       99: 'uninitialized'
@@ -249,75 +258,73 @@ class DatabaseConfig {
   handleConnectionError(error) {
     console.error('🔍 Error Analysis:');
     
-    if (error.message.includes('not supported')) {
-      console.error('❌ CONFIGURATION ERROR:');
-      console.error('   - Mongoose version incompatibility detected');
-      console.error('   - Current version:', mongoose.version);
-      console.error('   - Try updating Mongoose: npm install mongoose@latest');
-      console.error('   - Or check which options are causing issues');
+    if (error.message.includes('timeout')) {
+      console.error('❌ TIMEOUT ERROR:');
+      console.error('   - Database server may be overloaded');
+      console.error('   - Network connectivity issues');
+      console.error('   - Try upgrading MongoDB Atlas tier');
+      console.error('   - Check Vercel region settings');
     } else if (error.name === 'MongooseServerSelectionError') {
       console.error('❌ SERVER SELECTION ERROR:');
       console.error('   - Check MongoDB Atlas cluster status');
-      console.error('   - Verify IP whitelist includes 0.0.0.0/0');
+      console.error('   - Verify IP whitelist: 0.0.0.0/0');
       console.error('   - Confirm connection string format');
-      console.error('   - Check database credentials');
-    } else if (error.message.includes('timeout')) {
-      console.error('❌ TIMEOUT ERROR:');
-      console.error('   - Database server may be slow or overloaded');
-      console.error('   - Network connectivity issues');
-      console.error('   - Consider upgrading database cluster');
-      console.error('   - Check Vercel region vs database region');
-    } else if (error.message.includes('Authentication failed')) {
+      console.error('   - Verify database credentials');
+    } else if (error.message.includes('Authentication')) {
       console.error('❌ AUTHENTICATION ERROR:');
-      console.error('   - Verify username and password in DB_URI');
-      console.error('   - Check database user permissions');
-      console.error('   - Ensure database user exists');
+      console.error('   - Check username/password in DB_URI');
+      console.error('   - Verify user permissions');
+    } else {
+      console.error('❌ UNKNOWN ERROR:', error.message);
     }
   }
 
   async getHealthStatus() {
     try {
       const isConnected = mongoose.connection.readyState === 1;
-      const healthStatus = {
+      
+      const health = {
         connection: {
-          state: mongoose.connection.readyState,  
+          state: mongoose.connection.readyState,
           stateText: this.getReadyStateText(),
           isConnected,
-          cached: !!cachedConnection,
+          cached: !!cached.conn,
           attempts: this.connectionAttempts,
-          mongooseVersion: mongoose.version,
-          versionInfo: this.mongooseVersion
+          mongooseVersion: mongoose.version
         },
         environment: {
           NODE_ENV: process.env.NODE_ENV,
           hasDbUri: !!process.env.DB_URI,
-          platform: process.env.VERCEL ? 'vercel' : 'local'
-        },
-        configuration: {
-          supportedOptions: Object.keys(this.connectionOptions),
-          bufferCommands: mongoose.get('bufferCommands'),
-          autoIndex: mongoose.get('autoIndex'),
-          strict: mongoose.get('strict')
+          platform: process.env.VERCEL ? 'vercel' : 'local',
+          region: process.env.VERCEL_REGION || 'unknown'
         }
       };
 
-      // Quick ping test if connected
-      if (isConnected) {
-        const startTime = Date.now();
-        await mongoose.connection.db.admin().ping();
-        healthStatus.connection.latency = Date.now() - startTime;
+      // Add database info if available
+      if (isConnected && mongoose.connection.db) {
+        try {
+          health.database = {
+            name: mongoose.connection.db.databaseName || 'unknown',
+            host: mongoose.connection.host || 'unknown'
+          };
+
+          // Quick ping test
+          const startTime = Date.now();
+          await mongoose.connection.db.admin().ping();
+          health.connection.latency = Date.now() - startTime;
+        } catch (dbError) {
+          health.database = { error: dbError.message };
+        }
       }
 
-      return healthStatus;
+      return health;
     } catch (error) {
       return {
         connection: {
           state: -1,
           stateText: 'error',
           error: error.message,
-          isConnected: false,
-          cached: false,
-          mongooseVersion: mongoose.version
+          isConnected: false
         }
       };
     }
@@ -332,44 +339,39 @@ class DatabaseConfig {
       const startTime = Date.now();
       await mongoose.connection.db.admin().ping();
       const latency = Date.now() - startTime;
-      
+
       return { 
         connected: true, 
-        latency, 
-        cached: !!cachedConnection,
-        version: mongoose.version 
+        latency,
+        cached: !!cached.conn,
+        state: this.getReadyStateText()
       };
     } catch (error) {
       return { connected: false, error: error.message };
     }
   }
 
+  // Main method to use in API routes
   async ensureConnection() {
-    if (!cachedConnection || mongoose.connection.readyState !== 1) {
-      return await this.connect();
+    if (cached.conn && mongoose.connection.readyState === 1) {
+      return cached.conn;
     }
-    return cachedConnection;
+    return await this.connect();
   }
 
-  clearCache() {
-    cachedConnection = null;
-  }
-
-  // Disconnect method for cleanup
   async disconnect() {
     try {
       if (mongoose.connection.readyState !== 0) {
         await mongoose.disconnect();
-        cachedConnection = null;
-        console.log("✅ Database disconnected successfully");
+        this.clearCache();
+        console.log("✅ Database disconnected");
       }
     } catch (error) {
-      console.error("❌ Error disconnecting from database:", error);
+      console.error("❌ Disconnect error:", error);
     }
   }
 }
 
-// Create singleton instance
+// Export singleton instance
 const databaseConfig = new DatabaseConfig();
-
 module.exports = databaseConfig;
