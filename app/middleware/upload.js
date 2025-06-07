@@ -1,4 +1,3 @@
-// app/middleware/upload.js - Railway Compatible Version
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -8,7 +7,6 @@ const uploadsDir = process.env.NODE_ENV === 'production'
   ? path.join(process.cwd(), 'uploads')
   : path.join(__dirname, '../../uploads');
 
-// Ensure uploads directory exists with proper error handling
 function ensureUploadsDirectory() {
   try {
     if (!fs.existsSync(uploadsDir)) {
@@ -16,7 +14,6 @@ function ensureUploadsDirectory() {
       console.log('📁 Created uploads directory at:', uploadsDir);
     }
     
-    // Test write permissions
     const testFile = path.join(uploadsDir, '.write-test');
     fs.writeFileSync(testFile, 'test');
     fs.unlinkSync(testFile);
@@ -44,14 +41,11 @@ function ensureUploadsDirectory() {
   }
 }
 
-// Initialize directory
 const uploadsDirResult = ensureUploadsDirectory();
 const finalUploadsDir = typeof uploadsDirResult === 'string' ? uploadsDirResult : uploadsDir;
 
-// Enhanced disk storage configuration
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // Double-check directory exists before each upload
     try {
       if (!fs.existsSync(finalUploadsDir)) {
         fs.mkdirSync(finalUploadsDir, { recursive: true });
@@ -64,11 +58,9 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     try {
-      // Generate unique filename with timestamp and random suffix
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
       const extension = path.extname(file.originalname).toLowerCase();
       
-      // Validate extension
       const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
       if (!allowedExtensions.includes(extension)) {
         return cb(new Error(`Invalid file extension: ${extension}. Allowed: ${allowedExtensions.join(', ')}`));
@@ -91,7 +83,6 @@ const storage = multer.diskStorage({
   }
 });
 
-// Enhanced file filter function
 const fileFilter = (req, file, cb) => {
   console.log('📎 File filter check:', {
     originalname: file.originalname,
@@ -99,7 +90,6 @@ const fileFilter = (req, file, cb) => {
     fieldname: file.fieldname
   });
 
-  // Allowed MIME types
   const allowedMimeTypes = [
     'image/jpeg',
     'image/jpg', 
@@ -107,23 +97,19 @@ const fileFilter = (req, file, cb) => {
     'image/webp'
   ];
   
-  // Allowed file extensions
   const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
   const fileExtension = path.extname(file.originalname).toLowerCase();
   
-  // Check MIME type
   if (!allowedMimeTypes.includes(file.mimetype)) {
     console.log('❌ Invalid MIME type:', file.mimetype);
     return cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types: ${allowedMimeTypes.join(', ')}`), false);
   }
   
-  // Check file extension
   if (!allowedExtensions.includes(fileExtension)) {
     console.log('❌ Invalid file extension:', fileExtension);
     return cb(new Error(`Invalid file extension: ${fileExtension}. Allowed extensions: ${allowedExtensions.join(', ')}`), false);
   }
   
-  // Additional security check: verify file name doesn't contain dangerous characters
   if (file.originalname.includes('..') || file.originalname.includes('/') || file.originalname.includes('\\')) {
     console.log('❌ Dangerous filename detected:', file.originalname);
     return cb(new Error('Invalid filename: contains dangerous characters'), false);
@@ -133,16 +119,15 @@ const fileFilter = (req, file, cb) => {
   cb(null, true);
 };
 
-// Enhanced multer configuration
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-    files: 1, // Only one file at a time
-    fieldSize: 10 * 1024 * 1024, // 10MB field size limit
-    fields: 10, // Maximum number of non-file fields
-    parts: 20 // Maximum number of parts (files + fields)
+    fileSize: 5 * 1024 * 1024, 
+    files: 1,
+    fieldSize: 10 * 1024 * 1024, 
+    fields: 10, 
+    parts: 20 
   },
   onError: function(err, next) {
     console.error('💥 Multer error:', err.message);
@@ -150,7 +135,6 @@ const upload = multer({
   }
 });
 
-// Enhanced middleware for single file upload
 const uploadSingle = (req, res, next) => {
   const uploadHandler = upload.single('image');
   
@@ -162,13 +146,11 @@ const uploadSingle = (req, res, next) => {
     
     if (req.file) {
       try {
-        // Add additional file information
         req.file.url = `/uploads/${req.file.filename}`;
         req.file.storageType = 'local';
         req.file.uploadTimestamp = new Date().toISOString();
         req.file.uploadsDirectory = finalUploadsDir;
         
-        // Railway-specific: Add public URL if available
         if (process.env.RAILWAY_PUBLIC_DOMAIN) {
           req.file.publicUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/uploads/${req.file.filename}`;
         }
@@ -182,13 +164,11 @@ const uploadSingle = (req, res, next) => {
           mimetype: req.file.mimetype
         });
         
-        // Verify file was actually written
         if (!fs.existsSync(req.file.path)) {
           console.error('❌ File not found after upload:', req.file.path);
           return next(new Error('File upload failed: file not saved to disk'));
         }
         
-        // Verify file size matches
         const actualSize = fs.statSync(req.file.path).size;
         if (actualSize !== req.file.size) {
           console.error('❌ File size mismatch:', { expected: req.file.size, actual: actualSize });
@@ -209,11 +189,9 @@ const uploadSingle = (req, res, next) => {
   });
 };
 
-// Enhanced error handling middleware
 const handleUploadErrors = (err, req, res, next) => {
   console.error('🚨 Upload error handler:', err.message);
   
-  // Clean up any uploaded file if error occurs
   if (req.file && req.file.path && fs.existsSync(req.file.path)) {
     console.log('🧹 Cleaning up file due to error:', req.file.path);
     deleteUploadedFile(req.file.path);
@@ -282,7 +260,6 @@ const handleUploadErrors = (err, req, res, next) => {
     }
   }
   
-  // Custom file filter errors
   if (err && err.message.includes('Invalid file type')) {
     return res.status(400).json({
       success: false,
@@ -301,7 +278,6 @@ const handleUploadErrors = (err, req, res, next) => {
     });
   }
   
-  // File system errors
   if (err && err.message.includes('ENOSPC')) {
     return res.status(507).json({
       success: false,
@@ -318,7 +294,6 @@ const handleUploadErrors = (err, req, res, next) => {
     });
   }
   
-  // Generic upload error
   if (err) {
     return res.status(400).json({
       success: false,
@@ -330,7 +305,6 @@ const handleUploadErrors = (err, req, res, next) => {
   next(err);
 };
 
-// Enhanced helper function to delete uploaded file
 const deleteUploadedFile = (filePath) => {
   try {
     if (filePath && fs.existsSync(filePath)) {
@@ -347,7 +321,6 @@ const deleteUploadedFile = (filePath) => {
   }
 };
 
-// Enhanced function to clean old files with Railway optimizations
 const cleanOldFiles = (maxAgeHours = 24) => {
   try {
     if (!fs.existsSync(finalUploadsDir)) {
@@ -365,7 +338,6 @@ const cleanOldFiles = (maxAgeHours = 24) => {
     
     files.forEach(file => {
       try {
-        // Skip hidden files and .gitkeep
         if (file.startsWith('.')) {
           return;
         }
@@ -398,21 +370,17 @@ const cleanOldFiles = (maxAgeHours = 24) => {
   }
 };
 
-// Enhanced periodic cleanup with error handling
 const startPeriodicCleanup = () => {
   console.log('🧹 Starting periodic file cleanup service...');
   
-  // Run cleanup immediately
   setTimeout(() => {
     cleanOldFiles(24);
   }, 30000); // 30 seconds after startup
   
-  // Then run every hour
   const cleanupInterval = setInterval(() => {
     try {
-      const deletedCount = cleanOldFiles(24); // Delete files older than 24 hours
+      const deletedCount = cleanOldFiles(24); 
       
-      // Log storage usage periodically
       if (fs.existsSync(finalUploadsDir)) {
         const files = fs.readdirSync(finalUploadsDir);
         let totalSize = 0;
@@ -431,9 +399,8 @@ const startPeriodicCleanup = () => {
     } catch (error) {
       console.error('❌ Periodic cleanup error:', error.message);
     }
-  }, 60 * 60 * 1000); // Run every hour
+  }, 60 * 60 * 1000);
   
-  // Clear interval on process exit
   process.on('exit', () => {
     clearInterval(cleanupInterval);
   });
@@ -451,7 +418,6 @@ const startPeriodicCleanup = () => {
   console.log('✅ Periodic cleanup service started (runs every hour, keeps files for 24h)');
 };
 
-// Get upload statistics
 const getUploadStats = () => {
   try {
     if (!fs.existsSync(finalUploadsDir)) {

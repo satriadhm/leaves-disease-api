@@ -1,4 +1,3 @@
-// app/middleware/index.js - Updated for local storage
 const authJwt = require("./authJwt");
 const verifySignUp = require("./verifySignUp");
 const { optionalAuth } = require("./optionalAuth");

@@ -107,13 +107,11 @@ const UserSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index untuk performa query
 UserSchema.index({ username: 1 });
 UserSchema.index({ email: 1 });
 UserSchema.index({ status: 1 });
 UserSchema.index({ createdAt: -1 });
 
-// Virtual untuk full name
 UserSchema.virtual('profile.fullName').get(function() {
   if (this.profile.firstName && this.profile.lastName) {
     return `${this.profile.firstName} ${this.profile.lastName}`;
@@ -121,14 +119,11 @@ UserSchema.virtual('profile.fullName').get(function() {
   return this.profile.firstName || this.profile.lastName || this.username;
 });
 
-// Virtual untuk checking if account is locked
 UserSchema.virtual('isLocked').get(function() {
   return !!(this.lockUntil && this.lockUntil > Date.now());
 });
 
-// Method untuk increment login attempts
 UserSchema.methods.incLoginAttempts = function() {
-  // If we have a previous lock that has expired, restart at 1
   if (this.lockUntil && this.lockUntil < Date.now()) {
     return this.updateOne({
       $unset: { lockUntil: 1 },
@@ -138,7 +133,6 @@ UserSchema.methods.incLoginAttempts = function() {
   
   const updates = { $inc: { loginAttempts: 1 } };
   
-  // Lock account after 5 failed attempts for 2 hours
   if (this.loginAttempts + 1 >= 5 && !this.isLocked) {
     updates.$set = {
       lockUntil: Date.now() + 2 * 60 * 60 * 1000 // 2 hours
@@ -148,7 +142,6 @@ UserSchema.methods.incLoginAttempts = function() {
   return this.updateOne(updates);
 };
 
-// Method untuk reset login attempts
 UserSchema.methods.resetLoginAttempts = function() {
   return this.updateOne({
     $unset: {
@@ -158,11 +151,7 @@ UserSchema.methods.resetLoginAttempts = function() {
   });
 };
 
-// REMOVED: Pre-save middleware that was causing conflicts
-// Password hashing is now handled explicitly in the controller
-// This prevents double-hashing and ensures we have control over when hashing occurs
 
-// Transform output (hide sensitive data)
 UserSchema.methods.toJSON = function() {
   const user = this.toObject();
   delete user.password;

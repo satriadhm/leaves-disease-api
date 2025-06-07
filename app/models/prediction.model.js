@@ -41,7 +41,7 @@ const PredictionSchema = new mongoose.Schema({
     ip: String
   },
   processingTime: {
-    type: Number, // in milliseconds
+    type: Number, 
     required: true
   },
   notes: {
@@ -52,7 +52,6 @@ const PredictionSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index untuk performa query
 PredictionSchema.index({ userId: 1, createdAt: -1 });
 PredictionSchema.index({ createdAt: -1 });
 PredictionSchema.index({ predictedClass: 1 });

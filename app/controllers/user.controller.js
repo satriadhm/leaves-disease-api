@@ -1,4 +1,3 @@
-// app/controllers/user.controller.js
 const db = require("../models");
 const User = db.user;
 const Role = db.role;
@@ -25,7 +24,6 @@ exports.moderatorBoard = (req, res) => {
   res.status(200).send("Moderator Content.");
 };
 
-// Get current user profile
 exports.getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.userId)
@@ -54,7 +52,6 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// Update current user profile
 exports.updateProfile = async (req, res) => {
   try {
     const { username, email, profile } = req.body;
@@ -68,7 +65,6 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    // Check if username or email already exists (excluding current user)
     if (username && username !== user.username) {
       const existingUser = await User.findOne({ username, _id: { $ne: userId } });
       if (existingUser) {
@@ -91,7 +87,6 @@ exports.updateProfile = async (req, res) => {
       user.email = email;
     }
 
-    // Update profile fields
     if (profile) {
       user.profile = { ...user.profile, ...profile };
     }
@@ -118,7 +113,6 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// Delete current user account
 exports.deleteAccount = async (req, res) => {
   try {
     const { password } = req.body;
@@ -139,7 +133,6 @@ exports.deleteAccount = async (req, res) => {
       });
     }
 
-    // Verify password
     const passwordIsValid = bcrypt.compareSync(password, user.password);
     if (!passwordIsValid) {
       return res.status(401).json({
@@ -148,10 +141,8 @@ exports.deleteAccount = async (req, res) => {
       });
     }
 
-    // Delete user's predictions
     await Prediction.deleteMany({ userId: userId });
 
-    // Delete user account
     await User.findByIdAndDelete(userId);
 
     res.status(200).json({
@@ -167,8 +158,6 @@ exports.deleteAccount = async (req, res) => {
     });
   }
 };
-
-// Admin: Get all users
 exports.getAllUsers = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -177,7 +166,6 @@ exports.getAllUsers = async (req, res) => {
 
     let query = {};
     
-    // Search filter
     if (req.query.search) {
       query.$or = [
         { username: { $regex: req.query.search, $options: 'i' } },
@@ -187,12 +175,10 @@ exports.getAllUsers = async (req, res) => {
       ];
     }
 
-    // Status filter
     if (req.query.status) {
       query.status = req.query.status;
     }
 
-    // Role filter
     if (req.query.role) {
       const role = await Role.findOne({ name: req.query.role });
       if (role) {
@@ -233,7 +219,6 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-// Admin: Get user by ID
 exports.getUserById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -256,7 +241,6 @@ exports.getUserById = async (req, res) => {
       });
     }
 
-    // Get user statistics
     const predictionCount = await Prediction.countDocuments({ userId: id });
     const recentPredictions = await Prediction.find({ userId: id })
       .sort({ createdAt: -1 })
@@ -284,7 +268,6 @@ exports.getUserById = async (req, res) => {
   }
 };
 
-// Admin: Update user
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -305,7 +288,6 @@ exports.updateUser = async (req, res) => {
       });
     }
 
-    // Check for duplicate username/email
     if (username && username !== user.username) {
       const existingUser = await User.findOne({ username, _id: { $ne: id } });
       if (existingUser) {
@@ -328,18 +310,15 @@ exports.updateUser = async (req, res) => {
       user.email = email;
     }
 
-    // Update roles
     if (roles && Array.isArray(roles)) {
       const roleObjects = await Role.find({ name: { $in: roles } });
       user.roles = roleObjects.map(role => role._id);
     }
 
-    // Update status
     if (status) {
       user.status = status;
     }
 
-    // Update profile
     if (profile) {
       user.profile = { ...user.profile, ...profile };
     }
@@ -366,7 +345,6 @@ exports.updateUser = async (req, res) => {
   }
 };
 
-// Admin: Delete user
 exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -378,7 +356,6 @@ exports.deleteUser = async (req, res) => {
       });
     }
 
-    // Prevent admin from deleting themselves
     if (id === req.userId) {
       return res.status(400).json({
         success: false,
@@ -394,7 +371,6 @@ exports.deleteUser = async (req, res) => {
       });
     }
 
-    // Delete user's predictions
     await Prediction.deleteMany({ userId: id });
 
     // Delete user
@@ -414,7 +390,6 @@ exports.deleteUser = async (req, res) => {
   }
 };
 
-// Admin: Get user statistics
 exports.getUserStats = async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
@@ -441,7 +416,6 @@ exports.getUserStats = async (req, res) => {
       }
     ]);
 
-    // Recent registrations (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 

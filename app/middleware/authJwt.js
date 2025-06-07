@@ -1,4 +1,3 @@
-// app/middleware/authJwt.js
 const jwt = require('jsonwebtoken');
 const config = require('../config/auth.config.js');
 const db = require('../models');
@@ -14,19 +13,16 @@ verifyToken = async (req, res, next) => {
     }
     
     try {
-        // Check if token is blacklisted
         const blacklistedToken = await BlacklistedToken.isBlacklisted(token);
         if (blacklistedToken) {
             return res.status(401).send({ message: "Token has been invalidated!" });
         }
         
-        // Verify JWT token
         jwt.verify(token, config.secret, async (err, decoded) => {
             if (err) {
                 return res.status(401).send({ message: "Unauthorized!" });
             }
             
-            // Check if user still exists and is active
             const user = await User.findById(decoded.id);
             if (!user) {
                 return res.status(401).send({ message: "User not found!" });
@@ -118,12 +114,9 @@ isModeratorOrAdmin = async (req, res, next) => {
 };
 
 checkOwnership = (req, res, next) => {
-    // This middleware checks if the user is accessing their own resource
-    // or if they have admin privileges
     const resourceUserId = req.params.userId || req.body.userId;
     
     if (req.userId === resourceUserId) {
-        // User is accessing their own resource
         next();
         return;
     }

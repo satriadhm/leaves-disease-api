@@ -1,4 +1,3 @@
-// app/models/blacklistedToken.model.js
 const mongoose = require('mongoose');
 
 const BlacklistedTokenSchema = new mongoose.Schema({
@@ -22,16 +21,14 @@ const BlacklistedTokenSchema = new mongoose.Schema({
   expiresAt: {
     type: Date,
     required: true,
-    index: { expireAfterSeconds: 0 } // Automatically remove expired tokens
+    index: { expireAfterSeconds: 0 }
   }
 }, {
   timestamps: true
 });
 
-// Compound index for efficient queries
 BlacklistedTokenSchema.index({ token: 1, expiresAt: 1 });
 
-// Static method to check if token is blacklisted
 BlacklistedTokenSchema.statics.isBlacklisted = function(token) {
   return this.findOne({ 
     token: token, 
