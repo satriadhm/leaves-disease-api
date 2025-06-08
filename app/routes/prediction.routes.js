@@ -1,4 +1,3 @@
-// app/routes/prediction.routes.js - Fixed version without update route
 const { authJwt, optionalAuth, uploadSingle, handleUploadErrors } = require("../middleware");
 const controller = require("../controllers/prediction.controller");
 

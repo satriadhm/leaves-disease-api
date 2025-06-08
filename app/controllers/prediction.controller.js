@@ -1,4 +1,3 @@
-// app/controllers/prediction.controller.js - Updated for local storage
 const tf = require('@tensorflow/tfjs');
 require('@tensorflow/tfjs-backend-cpu');
 const fs = require('fs');
@@ -8,7 +7,6 @@ const db = require("../models");
 const Prediction = db.prediction;
 const { deleteUploadedFile } = require('../middleware/upload');
 
-// Load model dan labels saat server start
 let model = null;
 let classNames = [];
 
@@ -19,7 +17,6 @@ const MODEL_PATH = process.env.NODE_ENV === 'production'
 const LABELS_PATH = process.env.NODE_ENV === 'production'
   ? path.join(process.cwd(), 'models/labels.txt')
   : path.join(__dirname, '../../models/labels.txt');
-// Initialize model
 const initializeModel = async () => {
   try {
     await tf.setBackend('cpu');
@@ -755,7 +752,6 @@ exports.getPredictionStats = async (req, res) => {
   }
 };
 
-// Health check endpoint untuk model
 exports.getModelHealth = async (req, res) => {
   try {
     let modelInfo = {
