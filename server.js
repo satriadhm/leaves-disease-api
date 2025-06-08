@@ -1,4 +1,3 @@
-// server.js - Railway Compatible Version with Nonce-based CSP
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -9,20 +8,16 @@ const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
 
-// Import configurations
 const databaseConfig = require("./app/config/database.config");
 const corsConfig = require("./app/config/cors.config");
 const { limiter } = require("./app/utils/rateLimiter");
 const { errorHandler } = require("./app/middleware/errorHandler");
 const { startPeriodicCleanup, uploadsDir } = require("./app/middleware/upload");
 
-// Initialize Express app
 const app = express();
 
-// Railway fix: Trust proxy for correct protocol detection
 app.set('trust proxy', 1);
 
-// Railway fix: Force HTTPS redirect in production
 if (process.env.NODE_ENV === 'production') {
   app.use((req, res, next) => {
     if (req.header('x-forwarded-proto') !== 'https') {
@@ -33,26 +28,42 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// Compression middleware for better performance
 app.use(compression());
 
-// Middleware to generate nonce for each request
 app.use((req, res, next) => {
   res.locals.nonce = crypto.randomBytes(16).toString('base64');
   next();
 });
 
-// Ensure uploads directory exists
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log('📁 Created uploads directory at:', uploadsDir);
+const ensureUploadsDirectory = () => {
+  try {
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      console.log('📁 Created uploads directory at:', uploadsDir);
+    }
+    
+    const testFile = path.join(uploadsDir, '.write-test');
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+    
+    console.log('✅ Uploads directory is writable:', uploadsDir);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to setup uploads directory:', error.message);
+    return false;
+  }
+};
+
+const uploadsReady = ensureUploadsDirectory();
+if (!uploadsReady) {
+  console.error('💀 Failed to initialize uploads directory. Image uploads will not work.');
 }
 
-// Start periodic file cleanup (remove old uploaded files)
-startPeriodicCleanup();
-console.log('🧹 Started periodic file cleanup service');
+if (uploadsReady) {
+  startPeriodicCleanup();
+  console.log('🧹 Started periodic file cleanup service');
+}
 
-// Security middleware with nonce-based CSP
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false,
@@ -66,11 +77,11 @@ app.use(helmet({
         "cdn.jsdelivr.net",
         (req, res) => `'nonce-${res.locals.nonce}'` // Dynamic nonce
       ],
-      imgSrc: ["'self'", "data:", "https:", "http:"], // Allow uploaded images
+      imgSrc: ["'self'", "data:", "https:", "http:", "blob:"], // Allow all image sources including uploads
       connectSrc: ["'self'", "https:", "http:"],
       fontSrc: ["'self'", "https:", "data:"],
       objectSrc: ["'none'"],
-      mediaSrc: ["'self'"],
+      mediaSrc: ["'self'", "data:", "blob:"],
       frameSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
@@ -86,24 +97,55 @@ app.options('*', cors(corsConfig.getCorsOptions()));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Static file serving for uploaded images
+// FIXED: Enhanced static file serving for uploaded images
 console.log('🖼️  Setting up static file serving for uploads...');
-app.use('/uploads', express.static(uploadsDir, {
+
+// Add specific route for uploads with proper headers
+app.use('/uploads', (req, res, next) => {
+  // Log access for debugging
+  console.log(`📸 Image request: ${req.path}`);
+  
+  // Set CORS headers for images
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  
+  next();
+}, express.static(uploadsDir, {
   maxAge: '1d', // Cache for 1 day
-  setHeaders: (res, path, stat) => {
-    // Set appropriate headers for images
-    const ext = path.split('.').pop().toLowerCase();
-    if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
-      res.set('Content-Type', `image/${ext === 'jpg' ? 'jpeg' : ext}`);
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath, stat) => {
+    const ext = path.extname(filePath).toLowerCase();
+    
+    if (ext === '.jpg' || ext === '.jpeg') {
+      res.set('Content-Type', 'image/jpeg');
+    } else if (ext === '.png') {
+      res.set('Content-Type', 'image/png');
+    } else if (ext === '.webp') {
+      res.set('Content-Type', 'image/webp');
+    } else {
+      res.set('Content-Type', 'application/octet-stream');
     }
     
-    // Add security headers
     res.set('X-Content-Type-Options', 'nosniff');
-    res.set('Content-Security-Policy', "default-src 'none'");
-  }
+    res.set('Cache-Control', 'public, max-age=86400'); // 1 day cache
+    
+    console.log(`📸 Serving image: ${path.basename(filePath)} (${ext})`);
+  },
+  fallthrough: false
 }));
 
-// Add a route to list uploaded files (for debugging, admin only)
+app.use('/uploads', (req, res) => {
+  console.log(`❌ Image not found: ${req.path}`);
+  res.status(404).json({
+    success: false,
+    message: 'Image not found',
+    path: req.path,
+    uploadsDir: uploadsDir
+  });
+});
+
 app.get('/uploads-info', (req, res) => {
   try {
     if (process.env.NODE_ENV === 'production') {
@@ -113,23 +155,42 @@ app.get('/uploads-info', (req, res) => {
       });
     }
     
+    if (!fs.existsSync(uploadsDir)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Uploads directory does not exist',
+        uploadsDir: uploadsDir
+      });
+    }
+    
     const files = fs.readdirSync(uploadsDir);
     const fileInfo = files.map(file => {
       const filePath = path.join(uploadsDir, file);
-      const stats = fs.statSync(filePath);
-      return {
-        name: file,
-        size: stats.size,
-        created: stats.birthtime,
-        modified: stats.mtime,
-        url: `/uploads/${file}`
-      };
+      try {
+        const stats = fs.statSync(filePath);
+        return {
+          name: file,
+          size: stats.size,
+          sizeFormatted: `${(stats.size / 1024).toFixed(2)} KB`,
+          created: stats.birthtime,
+          modified: stats.mtime,
+          url: `/uploads/${file}`,
+          exists: true
+        };
+      } catch (error) {
+        return {
+          name: file,
+          error: error.message,
+          exists: false
+        };
+      }
     });
     
     res.json({
       success: true,
       data: {
         uploadsDirectory: uploadsDir,
+        directoryExists: true,
         totalFiles: files.length,
         files: fileInfo
       }
@@ -138,23 +199,43 @@ app.get('/uploads-info', (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error reading uploads directory',
+      error: error.message,
+      uploadsDir: uploadsDir
+    });
+  }
+});
+
+app.get('/test-image', (req, res) => {
+  try {
+    const testImageData = Buffer.from([
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
+      0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0x0F, 0x00, 0x00,
+      0x01, 0x00, 0x01, 0x5C, 0xCD, 0x90, 0x82, 0x00, 0x00, 0x00, 0x00, 0x49,
+      0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+    ]);
+    
+    res.set('Content-Type', 'image/png');
+    res.set('Content-Length', testImageData.length);
+    res.send(testImageData);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate test image',
       error: error.message
     });
   }
 });
 
-// Logging middleware (only in development)
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan("combined"));
 }
 
-// Rate limiting middleware
 app.use(limiter);
 
-// Connect to database
 databaseConfig.connect();
 
-// Setup routes individually
 console.log('📋 Loading routes...');
 
 try {
@@ -201,7 +282,6 @@ try {
 
 console.log('📋 Route loading completed');
 
-// Root endpoint
 app.get("/", (req, res) => {
   res.json({
     message: "🌱 Plant Disease Prediction API is running!",
@@ -219,8 +299,12 @@ app.get("/", (req, res) => {
     },
     storage: {
       type: 'local',
-      uploadsDirectory: '/uploads',
-      cleanupEnabled: true
+      uploadsDirectory: uploadsDir,
+      directoryExists: fs.existsSync(uploadsDir),
+      cleanupEnabled: true,
+      staticRoute: '/uploads',
+      testImage: '/test-image',
+      debugInfo: process.env.NODE_ENV !== 'production' ? '/uploads-info' : null
     },
     endpoints: {
       auth: "/api/auth/*",
@@ -250,7 +334,6 @@ app.get("/", (req, res) => {
   });
 });
 
-// Route status endpoint
 app.get("/status/routes", (req, res) => {
   res.json({
     success: true,
@@ -272,23 +355,50 @@ app.get("/status/routes", (req, res) => {
   });
 });
 
-// Storage status endpoint
 app.get("/status/storage", (req, res) => {
   try {
+    const directoryExists = fs.existsSync(uploadsDir);
+    
+    if (!directoryExists) {
+      return res.status(503).json({
+        success: false,
+        message: "Uploads directory does not exist",
+        data: {
+          uploadsDirectory: uploadsDir,
+          directoryExists: false,
+          error: "Directory not found"
+        }
+      });
+    }
+    
     const stats = fs.statSync(uploadsDir);
     const files = fs.readdirSync(uploadsDir);
     
     let totalSize = 0;
     const fileTypes = {};
+    const recentFiles = [];
     
     files.forEach(file => {
-      const filePath = path.join(uploadsDir, file);
-      const fileStats = fs.statSync(filePath);
-      totalSize += fileStats.size;
-      
-      const ext = path.extname(file).toLowerCase();
-      fileTypes[ext] = (fileTypes[ext] || 0) + 1;
+      try {
+        const filePath = path.join(uploadsDir, file);
+        const fileStats = fs.statSync(filePath);
+        totalSize += fileStats.size;
+        
+        const ext = path.extname(file).toLowerCase();
+        fileTypes[ext] = (fileTypes[ext] || 0) + 1;
+        
+        recentFiles.push({
+          name: file,
+          size: fileStats.size,
+          created: fileStats.birthtime,
+          url: `/uploads/${file}`
+        });
+      } catch (error) {
+        console.error(`Error processing file ${file}:`, error.message);
+      }
     });
+    
+    recentFiles.sort((a, b) => new Date(b.created) - new Date(a.created));
     
     res.json({
       success: true,
@@ -300,15 +410,21 @@ app.get("/status/storage", (req, res) => {
         totalSize: totalSize,
         totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
         fileTypes: fileTypes,
+        recentFiles: recentFiles.slice(0, 10),
         permissions: {
-          readable: fs.constants.R_OK,
-          writable: fs.constants.W_OK
+          readable: true,
+          writable: uploadsReady
         },
         cleanup: {
           enabled: true,
           interval: '1 hour',
           maxAge: '24 hours'
-        }
+        },
+        staticRoute: '/uploads',
+        examples: files.length > 0 ? [
+          `${req.protocol}://${req.get('host')}/uploads/${files[0]}`,
+          `/uploads/${files[0]}`
+        ] : []
       },
       timestamp: new Date().toISOString()
     });
@@ -325,7 +441,6 @@ app.get("/status/storage", (req, res) => {
   }
 });
 
-// Security status endpoint (shows nonce info)
 app.get("/status/security", (req, res) => {
   res.json({
     success: true,
@@ -334,7 +449,8 @@ app.get("/status/security", (req, res) => {
       csp: {
         type: 'nonce-based',
         currentNonce: res.locals.nonce,
-        nonceLength: res.locals.nonce ? res.locals.nonce.length : 0
+        nonceLength: res.locals.nonce ? res.locals.nonce.length : 0,
+        imageSupport: 'enabled'
       },
       https: {
         forced: process.env.NODE_ENV === 'production',
@@ -351,7 +467,6 @@ app.get("/status/security", (req, res) => {
   });
 });
 
-// Railway health endpoint (Railway expects this)
 app.get("/healthz", (req, res) => {
   res.status(200).json({ 
     status: "healthy",
@@ -361,11 +476,14 @@ app.get("/healthz", (req, res) => {
     security: {
       csp: 'nonce-enabled',
       nonce: res.locals.nonce ? 'generated' : 'missing'
+    },
+    storage: {
+      uploadsReady: uploadsReady,
+      directoryExists: fs.existsSync(uploadsDir)
     }
   });
 });
 
-// 404 handler for undefined routes
 app.use("*", (req, res) => {
   res.status(404).json({
     success: false,
@@ -377,6 +495,7 @@ app.use("*", (req, res) => {
       health: "/health",
       auth: "/api/auth/*",
       predict: "/api/predict",
+      uploads: "/uploads/*",
       route_status: "/status/routes",
       storage_status: "/status/storage",
       security_status: "/status/security"
@@ -384,22 +503,17 @@ app.use("*", (req, res) => {
   });
 });
 
-// Error handling middleware (should be last)
 app.use(errorHandler);
 
-// Graceful shutdown handling
 process.on('SIGTERM', async () => {
   console.log('🛑 SIGTERM received, shutting down gracefully');
   
-  // Stop accepting new connections
   server.close(() => {
     console.log('🔌 HTTP server closed');
   });
   
-  // Disconnect from database
   await databaseConfig.disconnect();
   
-  // Clean up any pending file operations
   console.log('🧹 Cleaning up file operations...');
   
   process.exit(0);
@@ -408,21 +522,17 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   console.log('🛑 SIGINT received, shutting down gracefully');
   
-  // Stop accepting new connections
   server.close(() => {
     console.log('🔌 HTTP server closed');
   });
   
-  // Disconnect from database
   await databaseConfig.disconnect();
   
-  // Clean up any pending file operations
   console.log('🧹 Cleaning up file operations...');
   
   process.exit(0);
 });
 
-// Start server
 const PORT = process.env.PORT || 8000;
 
 const server = app.listen(PORT, '0.0.0.0', () => {
@@ -441,12 +551,12 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`📊 Swagger JSON: http://localhost:${PORT}/api/docs/swagger.json`);
   console.log('🚀 ================================');
   
-  // Log storage configuration
   console.log(`📁 Uploads Directory: ${uploadsDir}`);
+  console.log(`📁 Directory Exists: ${fs.existsSync(uploadsDir)}`);
+  console.log(`📁 Directory Writable: ${uploadsReady}`);
   console.log(`🖼️  Static Files: http://localhost:${PORT}/uploads/`);
-  console.log(`🧹 Cleanup Service: Active (24h retention)`);
+  console.log(`🧹 Cleanup Service: ${uploadsReady ? 'Active' : 'Disabled'} (24h retention)`);
   
-  // Log database connection status after a delay
   setTimeout(async () => {
     console.log(`💾 Database: ${databaseConfig.isConnected ? '✅ Connected' : '❌ Disconnected'}`);
     
@@ -462,18 +572,17 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     
     console.log('🚀 ================================');
     
-    // Railway-specific startup message
     if (process.env.NODE_ENV === 'production') {
       console.log('🚂 Railway Deployment Info:');
       console.log(`🌐 Public URL: https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'your-app.up.railway.app'}`);
       console.log(`📝 Environment Variables: ${Object.keys(process.env).filter(key => !key.includes('PASSWORD') && !key.includes('SECRET')).length} loaded`);
       console.log(`🛡️ CSP Nonces: Dynamically generated for each request`);
+      console.log(`🖼️  Image Access: ${process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/uploads/` : 'Railway domain not set'}`);
       console.log('🚀 ================================');
     }
   }, 3000);
 });
 
-// Handle server errors
 server.on('error', (error) => {
   if (error.syscall !== 'listen') {
     throw error;
@@ -495,7 +604,6 @@ server.on('error', (error) => {
   }
 });
 
-// Log unhandled promise rejections
 process.on('unhandledRejection', (err) => {
   console.error('🚨 Unhandled Promise Rejection:', err);
   // Don't exit in production, just log the error
@@ -504,7 +612,6 @@ process.on('unhandledRejection', (err) => {
   }
 });
 
-// Log uncaught exceptions
 process.on('uncaughtException', (err) => {
   console.error('🚨 Uncaught Exception:', err);
   process.exit(1);

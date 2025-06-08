@@ -1,3 +1,4 @@
+// app/controllers/prediction.controller.js - Fixed version with proper image URL handling
 const tf = require('@tensorflow/tfjs');
 require('@tensorflow/tfjs-backend-cpu');
 const fs = require('fs');
@@ -7,6 +8,7 @@ const db = require("../models");
 const Prediction = db.prediction;
 const { deleteUploadedFile } = require('../middleware/upload');
 
+// Load model dan labels saat server start
 let model = null;
 let classNames = [];
 
@@ -17,6 +19,8 @@ const MODEL_PATH = process.env.NODE_ENV === 'production'
 const LABELS_PATH = process.env.NODE_ENV === 'production'
   ? path.join(process.cwd(), 'models/labels.txt')
   : path.join(__dirname, '../../models/labels.txt');
+
+// Initialize model
 const initializeModel = async () => {
   try {
     await tf.setBackend('cpu');
@@ -178,35 +182,6 @@ const preprocessImage = async (imagePath) => {
   }
 };
 
-// Preprocessing image dari buffer
-const preprocessImageFromBuffer = async (imageBuffer) => {
-  try {
-    console.log('🖼️  Preprocessing image from buffer');
-    
-    const processedBuffer = await sharp(imageBuffer)
-      .resize(224, 224)
-      .removeAlpha()
-      .toColorspace('rgb')
-      .raw()
-      .toBuffer();
-
-    const imageTensor = tf.tensor3d(
-      new Uint8Array(processedBuffer),
-      [224, 224, 3],
-      'int32'
-    );
-
-    const normalizedImage = imageTensor.cast('float32').div(255.0).expandDims(0);
-    imageTensor.dispose();
-    
-    console.log('✅ Image preprocessing from buffer complete');
-    return normalizedImage;
-  } catch (error) {
-    console.error('❌ Image preprocessing error:', error.message);
-    throw new Error(`Image preprocessing error: ${error.message}`);
-  }
-};
-
 // Dummy prediction function
 const getDummyPrediction = () => {
   console.log('🎭 Generating dummy prediction');
@@ -225,7 +200,30 @@ const getDummyPrediction = () => {
   };
 };
 
-// Main prediction function (CREATE)
+// FIXED: Enhanced URL generation helper
+const generateImageUrls = (req, filename) => {
+  const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+  const host = req.get('host');
+  const baseUrl = `${protocol}://${host}`;
+  
+  const urls = {
+    relative: `/uploads/${filename}`,           // For API responses
+    full: `${baseUrl}/uploads/${filename}`,     // Full URL
+    filename: filename                          // Just the filename
+  };
+  
+  // Add Railway-specific URL if available
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    urls.railway = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/uploads/${filename}`;
+    urls.public = urls.railway; // Use Railway URL as public URL
+  } else {
+    urls.public = urls.full; // Fallback to full URL
+  }
+  
+  return urls;
+};
+
+// FIXED: Main prediction function with proper image URL handling
 exports.predictPlantDisease = async (req, res) => {
   const startTime = Date.now();
   
@@ -246,8 +244,14 @@ exports.predictPlantDisease = async (req, res) => {
       originalname: req.file.originalname,
       size: req.file.size,
       path: req.file.path,
-      storageType: req.file.storageType
+      url: req.file.url,
+      storageType: req.file.storageType,
+      verified: req.file.verified
     });
+
+    // FIXED: Generate comprehensive image URLs
+    const imageUrls = generateImageUrls(req, req.file.filename);
+    console.log('🔗 Generated image URLs:', imageUrls);
 
     let predictionResult;
 
@@ -299,28 +303,32 @@ exports.predictPlantDisease = async (req, res) => {
 
     const processingTime = Date.now() - startTime;
 
-    // Prepare response data
-    const imageName = req.file.originalname;
-    const imageUrl = req.file.url; // This is /uploads/filename
-    const storageType = 'local';
-
     console.log('💾 Saving prediction to database...');
 
-    // Save prediction to database
+    // FIXED: Save prediction with proper image URLs
     const predictionData = {
-      imageName: imageName,
-      imageUrl: imageUrl,
+      imageName: req.file.originalname,
+      imageUrl: imageUrls.relative,           // Store relative URL in database
+      imageFullUrl: imageUrls.full,           // Store full URL for reference
+      imagePublicUrl: imageUrls.public,       // Store public accessible URL
       predictedClass: predictionResult.predictedClass,
       confidence: predictionResult.confidence,
       allPredictions: predictionResult.allPredictions,
       predictionType: req.userId ? 'authenticated' : 'anonymous',
-      storageType: storageType,
+      storageType: 'local',
       deviceInfo: {
         userAgent: req.get('User-Agent'),
         ip: req.ip || req.connection.remoteAddress
       },
       processingTime: processingTime,
-      notes: req.body.notes || ''
+      notes: req.body.notes || '',
+      imageMetadata: {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype,
+        detectedFormat: req.file.detectedFormat || 'unknown'
+      }
     };
 
     if (req.userId) {
@@ -331,7 +339,7 @@ exports.predictPlantDisease = async (req, res) => {
     
     console.log('✅ Prediction saved with ID:', savedPrediction._id);
 
-    // Prepare response
+    // FIXED: Enhanced response with proper image URLs
     const response = {
       success: true,
       message: 'Prediction completed successfully',
@@ -343,16 +351,26 @@ exports.predictPlantDisease = async (req, res) => {
           class: p.class,
           confidence: Math.round(p.confidence * 10000) / 100
         })),
-        imageName: imageName,
-        imageUrl: imageUrl,
+        image: {
+          name: req.file.originalname,
+          filename: req.file.filename,
+          url: imageUrls.relative,           // Relative URL for frontend
+          fullUrl: imageUrls.full,           // Full URL with domain
+          publicUrl: imageUrls.public,       // Best public URL (Railway or full)
+          size: req.file.size,
+          sizeFormatted: `${(req.file.size / 1024).toFixed(2)} KB`,
+          format: req.file.detectedFormat || path.extname(req.file.originalname).substring(1).toUpperCase()
+        },
         processingTime: `${processingTime}ms`,
         timestamp: savedPrediction.createdAt,
         modelStatus: model ? 'loaded' : 'dummy',
-        storageType: storageType
+        storageType: 'local'
       }
     };
 
     console.log('🎉 Prediction completed successfully in', processingTime, 'ms');
+    console.log('🔗 Image accessible at:', imageUrls.public);
+    
     res.status(200).json(response);
 
   } catch (error) {
@@ -372,7 +390,7 @@ exports.predictPlantDisease = async (req, res) => {
   }
 };
 
-// Get prediction history (READ)
+// FIXED: Get prediction history with proper image URL reconstruction
 exports.getPredictionHistory = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -410,11 +428,38 @@ exports.getPredictionHistory = async (req, res) => {
       .populate('userId', 'username email')
       .select('-deviceInfo');
 
+    // FIXED: Reconstruct image URLs for each prediction
+    const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const host = req.get('host');
+    const baseUrl = `${protocol}://${host}`;
+
+    const enhancedPredictions = predictions.map(prediction => {
+      const predictionObj = prediction.toObject();
+      
+      // Reconstruct image URLs if they exist
+      if (predictionObj.imageUrl) {
+        const filename = path.basename(predictionObj.imageUrl);
+        
+        predictionObj.image = {
+          name: predictionObj.imageName,
+          filename: filename,
+          url: predictionObj.imageUrl,                    // Original relative URL
+          fullUrl: `${baseUrl}${predictionObj.imageUrl}`, // Full URL
+          publicUrl: process.env.RAILWAY_PUBLIC_DOMAIN 
+            ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}${predictionObj.imageUrl}`
+            : `${baseUrl}${predictionObj.imageUrl}`,       // Best public URL
+          metadata: predictionObj.imageMetadata || {}
+        };
+      }
+      
+      return predictionObj;
+    });
+
     res.status(200).json({
       success: true,
       message: 'Prediction history retrieved successfully',
       data: {
-        predictions: predictions,
+        predictions: enhancedPredictions,
         pagination: {
           currentPage: page,
           totalPages: Math.ceil(total / limit),
@@ -436,7 +481,7 @@ exports.getPredictionHistory = async (req, res) => {
   }
 };
 
-// Get prediction detail by ID (READ)
+// FIXED: Get prediction detail with proper image URL reconstruction
 exports.getPredictionDetail = async (req, res) => {
   try {
     const { id } = req.params;
@@ -469,10 +514,31 @@ exports.getPredictionDetail = async (req, res) => {
       });
     }
 
+    // FIXED: Reconstruct image URLs for the prediction detail
+    const predictionObj = prediction.toObject();
+    
+    if (predictionObj.imageUrl) {
+      const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+      const host = req.get('host');
+      const baseUrl = `${protocol}://${host}`;
+      const filename = path.basename(predictionObj.imageUrl);
+      
+      predictionObj.image = {
+        name: predictionObj.imageName,
+        filename: filename,
+        url: predictionObj.imageUrl,                    // Original relative URL
+        fullUrl: `${baseUrl}${predictionObj.imageUrl}`, // Full URL
+        publicUrl: process.env.RAILWAY_PUBLIC_DOMAIN 
+          ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}${predictionObj.imageUrl}`
+          : `${baseUrl}${predictionObj.imageUrl}`,       // Best public URL
+        metadata: predictionObj.imageMetadata || {}
+      };
+    }
+
     res.status(200).json({
       success: true,
       message: 'Prediction detail retrieved successfully',
-      data: prediction
+      data: predictionObj
     });
 
   } catch (error) {
@@ -485,7 +551,7 @@ exports.getPredictionDetail = async (req, res) => {
   }
 };
 
-// Delete prediction (DELETE)
+// FIXED: Delete prediction with proper file cleanup
 exports.deletePrediction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -516,12 +582,23 @@ exports.deletePrediction = async (req, res) => {
       });
     }
 
-    // Delete associated image file
+    // FIXED: Delete associated image file with better path resolution
     if (prediction.imageUrl && prediction.storageType === 'local') {
-      const imagePath = path.join(__dirname, '../../uploads', path.basename(prediction.imageUrl));
+      const filename = path.basename(prediction.imageUrl);
+      const { uploadsDir } = require('../middleware/upload');
+      const imagePath = path.join(uploadsDir, filename);
+      
+      console.log('🗑️ Attempting to delete image file:', imagePath);
+      
       if (fs.existsSync(imagePath)) {
-        deleteUploadedFile(imagePath);
-        console.log('🗑️ Deleted associated image file:', imagePath);
+        const deleted = deleteUploadedFile(imagePath);
+        if (deleted) {
+          console.log('✅ Successfully deleted associated image file');
+        } else {
+          console.log('⚠️ Failed to delete associated image file');
+        }
+      } else {
+        console.log('⚠️ Image file not found for deletion:', filename);
       }
     }
 
@@ -542,7 +619,7 @@ exports.deletePrediction = async (req, res) => {
   }
 };
 
-// Admin: Get all predictions (READ)
+// FIXED: Admin get all predictions with image URL reconstruction
 exports.getAllPredictions = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -582,11 +659,37 @@ exports.getAllPredictions = async (req, res) => {
       .skip(skip)
       .limit(limit);
 
+    // FIXED: Reconstruct image URLs for admin view
+    const protocol = req.secure || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const host = req.get('host');
+    const baseUrl = `${protocol}://${host}`;
+
+    const enhancedPredictions = predictions.map(prediction => {
+      const predictionObj = prediction.toObject();
+      
+      if (predictionObj.imageUrl) {
+        const filename = path.basename(predictionObj.imageUrl);
+        
+        predictionObj.image = {
+          name: predictionObj.imageName,
+          filename: filename,
+          url: predictionObj.imageUrl,
+          fullUrl: `${baseUrl}${predictionObj.imageUrl}`,
+          publicUrl: process.env.RAILWAY_PUBLIC_DOMAIN 
+            ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}${predictionObj.imageUrl}`
+            : `${baseUrl}${predictionObj.imageUrl}`,
+          metadata: predictionObj.imageMetadata || {}
+        };
+      }
+      
+      return predictionObj;
+    });
+
     res.status(200).json({
       success: true,
       message: 'All predictions retrieved successfully',
       data: {
-        predictions: predictions,
+        predictions: enhancedPredictions,
         pagination: {
           currentPage: page,
           totalPages: Math.ceil(total / limit),
@@ -608,7 +711,7 @@ exports.getAllPredictions = async (req, res) => {
   }
 };
 
-// Admin: Delete any prediction (DELETE)
+// FIXED: Admin delete prediction with proper file cleanup
 exports.adminDeletePrediction = async (req, res) => {
   try {
     const { id } = req.params;
@@ -628,12 +731,23 @@ exports.adminDeletePrediction = async (req, res) => {
       });
     }
 
-    // Delete associated image file
+    // FIXED: Delete associated image file with better path resolution
     if (prediction.imageUrl && prediction.storageType === 'local') {
-      const imagePath = path.join(__dirname, '../../uploads', path.basename(prediction.imageUrl));
+      const filename = path.basename(prediction.imageUrl);
+      const { uploadsDir } = require('../middleware/upload');
+      const imagePath = path.join(uploadsDir, filename);
+      
+      console.log('🗑️ Admin deleting image file:', imagePath);
+      
       if (fs.existsSync(imagePath)) {
-        deleteUploadedFile(imagePath);
-        console.log('🗑️ Admin deleted associated image file:', imagePath);
+        const deleted = deleteUploadedFile(imagePath);
+        if (deleted) {
+          console.log('✅ Admin successfully deleted associated image file');
+        } else {
+          console.log('⚠️ Admin failed to delete associated image file');
+        }
+      } else {
+        console.log('⚠️ Image file not found for admin deletion:', filename);
       }
     }
 
@@ -719,6 +833,10 @@ exports.getPredictionStats = async (req, res) => {
       }
     ]);
 
+    // FIXED: Get storage statistics
+    const { getUploadStats } = require('../middleware/upload');
+    const storageStats = getUploadStats();
+
     res.status(200).json({
       success: true,
       message: 'Prediction statistics retrieved successfully',
@@ -733,6 +851,13 @@ exports.getPredictionStats = async (req, res) => {
         predictionsByClass,
         predictionsByDate,
         predictionsByStorage,
+        storage: {
+          directory: storageStats.directory,
+          totalFiles: storageStats.files,
+          totalSize: storageStats.totalSizeMB + ' MB',
+          fileTypes: storageStats.fileTypes,
+          health: storageStats.storageHealth
+        },
         systemInfo: {
           modelLoaded: !!model,
           totalClasses: classNames.length,
@@ -752,8 +877,12 @@ exports.getPredictionStats = async (req, res) => {
   }
 };
 
+// Health check endpoint untuk model
 exports.getModelHealth = async (req, res) => {
   try {
+    const { getUploadStats } = require('../middleware/upload');
+    const storageStats = getUploadStats();
+    
     let modelInfo = {
       modelLoaded: !!model,
       modelPath: MODEL_PATH,
@@ -765,8 +894,10 @@ exports.getModelHealth = async (req, res) => {
       labelsExists: fs.existsSync(LABELS_PATH),
       modelType: model ? 'GraphModel' : 'Not loaded',
       storageConfig: {
-        localStorage: fs.existsSync(path.join(__dirname, '../../uploads')),
-        uploadsDirectory: path.join(__dirname, '../../uploads')
+        localStorage: storageStats.exists,
+        uploadsDirectory: storageStats.directory,
+        totalFiles: storageStats.files,
+        storageHealth: storageStats.storageHealth
       }
     };
     
